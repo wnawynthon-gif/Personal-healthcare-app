@@ -1,0 +1,11 @@
+{
+  "name": "Personal Healthcare v5",
+  "short_name": "Health v5",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f7f7",
+  "theme_color": "#0f766e",
+  "description": "Personal healthcare PWA with Supabase authentication, encrypted-transport cloud sync, offline tracking, reminders, reports and data quality checks.",
+  "icons": []
+}

@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0f766e" />
+  <title>Personal Healthcare v2</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">PERSONAL HEALTHCARE • V5</div>
+      <h1>สุขภาพของฉัน</h1>
+      <p id="todayText"></p>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" id="installBtn" title="ติดตั้งแอป" style="display:none">＋</button>
+      <button class="icon-btn" id="notifyBtn" title="เปิดการแจ้งเตือน">🔔</button>
+      <button class="icon-btn" id="exportBtn" title="Export">⇩</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-page="today">วันนี้</button>
+    <button class="tab" data-page="track">บันทึก</button>
+    <button class="tab" data-page="meds">ยา</button>
+    <button class="tab" data-page="labs">ผลตรวจ</button>
+    <button class="tab" data-page="profile">โปรไฟล์</button>
+    <button class="tab" data-page="report">รายงาน</button>
+    <button class="tab" data-page="doctor">Doctor Report</button>
+    <button class="tab" data-page="reminders">Reminder Center</button>
+    <button class="tab" data-page="quality">Data Quality</button>
+    <button class="tab" data-page="cloud">Cloud Sync</button>
+    <button class="tab" data-page="settings">ตั้งค่า</button>
+  </nav>
+
+  <main>
+    <section class="page active" id="today">
+      <div class="hero card">
+        <div>
+          <span class="badge ok" id="statusBadge">พร้อมติดตาม</span>
+          <h2>ภาพรวมวันนี้</h2>
+          <p id="summaryText">เริ่มบันทึกข้อมูลเพื่อดูแนวโน้มสุขภาพ</p>
+        </div>
+        <div class="score-ring">
+          <strong id="healthScore">—</strong><small>ครบถ้วน</small>
+        </div>
+      </div>
+
+      <div class="card identity-card">
+        <div>
+          <span class="muted">Health Profile</span>
+          <h3 id="profileName">My Health</h3>
+          <small id="profileMeta">Local profile</small>
+        </div>
+        <div class="sync-state" id="syncState">Local only</div>
+      </div>
+      <div id="alertBox"></div>
+
+      <div class="grid stats">
+        <div class="card stat"><span>ความดันล่าสุด</span><strong id="bpLatest">ยังไม่มี</strong><small id="bpStatus">เพิ่มค่าที่หน้า “บันทึก”</small></div>
+        <div class="card stat"><span>น้ำหนักล่าสุด</span><strong id="weightLatest">80.0 kg</strong><small id="bmiLatest">BMI —</small></div>
+        <div class="card stat"><span>ยาวันนี้</span><strong id="medDue">0 รายการ</strong><small id="medStatus">ยังไม่มีตารางยา</small></div>
+        <div class="card stat"><span>กิจกรรม 7 วัน</span><strong id="activityWeek">0 นาที</strong><small id="activityGoal">เป้าหมาย 150 นาที</small></div>
+      </div>
+
+      <div class="card">
+        <div class="section-title"><h3>สิ่งที่ควรทำวันนี้</h3><span class="muted">Checklist</span></div>
+        <div id="todayChecklist" class="checklist"></div>
+      </div>
+
+      <div class="card">
+        <div class="section-title"><h3>ยาตามเวลาวันนี้</h3><span class="muted">กด “กินแล้ว” เพื่อบันทึก</span></div>
+        <div id="todayMeds" class="list"></div>
+      </div>
+
+      <div class="card safety">
+        <strong>ข้อจำกัดของระบบ</strong>
+        <p>แอปนี้ช่วยบันทึกและดูแนวโน้ม ไม่เปลี่ยนขนาดยาและไม่วินิจฉัยโรคเอง หากมีอาการฉุกเฉินให้ติดต่อบริการฉุกเฉินโดยไม่รอการแจ้งเตือนจากแอป</p>
+      </div>
+    </section>
+
+    <section class="page" id="track">
+      <div class="card">
+        <h2>บันทึกความดัน</h2>
+        <div class="tip">ก่อนวัด: นั่งพิงพนัก เท้าวางราบ แขนวางบนโต๊ะ ผ่อนคลาย ไม่พูดระหว่างวัด และควรวัดซ้ำอีกครั้งหลังไม่กี่นาที</div>
+        <form id="bpForm" class="form-grid">
+          <label>ตัวบน SYS<input type="number" id="sys" min="60" max="260" required placeholder="เช่น 128"></label>
+          <label>ตัวล่าง DIA<input type="number" id="dia" min="30" max="160" required placeholder="เช่น 82"></label>
+          <label>ชีพจร<input type="number" id="pulse" min="30" max="220" placeholder="ครั้ง/นาที"></label>
+          <label>ช่วงเวลา<select id="bpPeriod"><option>เช้า</option><option>เย็น</option><option>อื่นๆ</option></select></label>
+          <label class="full">หมายเหตุ<input type="text" id="bpNote" placeholder="เช่น หลังพัก 5 นาที / วัดครั้งที่ 2"></label>
+          <button class="primary full" type="submit">บันทึกความดัน</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>บันทึกน้ำหนัก</h2>
+        <form id="weightForm" class="form-grid">
+          <label>น้ำหนัก (kg)<input type="number" id="weight" step="0.1" min="30" max="250" required></label>
+          <label>ส่วนสูง (cm)<input type="number" id="height" step="0.1" min="100" max="230" value="167"></label>
+          <button class="primary full" type="submit">บันทึกน้ำหนัก</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>บันทึกกิจกรรม</h2>
+        <form id="activityForm" class="form-grid">
+          <label>ประเภท<select id="activityType"><option>เดิน</option><option>จักรยาน</option><option>ว่ายน้ำ</option><option>เวทเบา</option><option>ยืดเหยียด</option><option>อื่นๆ</option></select></label>
+          <label>นาที<input type="number" id="activityMinutes" min="1" max="600" required></label>
+          <label class="full">หมายเหตุ<input type="text" id="activityNote" placeholder="เช่น เข่าไม่เจ็บ / ปวดเข่าเล็กน้อย"></label>
+          <button class="primary full" type="submit">บันทึกกิจกรรม</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="page" id="meds">
+      <div class="card">
+        <h2>ยาและตารางเตือน</h2>
+        <p class="muted">เพิ่มเฉพาะยาที่ได้รับคำแนะนำให้ใช้จริง แอปจะไม่แนะนำให้เริ่ม/หยุดยาเอง</p>
+        <form id="medForm" class="form-grid">
+          <label class="full">ชื่อยา<input type="text" id="medName" required placeholder="ชื่อยา"></label>
+          <label>ขนาด/วิธีใช้<input type="text" id="medDose" required placeholder="เช่น 1 เม็ด"></label>
+          <label>เวลา<input type="time" id="medTime" required></label>
+          <label>ความถี่<select id="medFreq"><option value="daily">ทุกวัน</option><option value="weekdays">จันทร์–ศุกร์</option><option value="custom">ตามแพทย์สั่ง/กำหนดเอง</option></select></label>
+          <label>เตือนก่อน (นาที)<input type="number" id="medLead" min="0" max="120" value="0"></label>
+          <label class="full">เหตุผล/หมายเหตุ<input type="text" id="medNote" placeholder="เช่น หลังอาหาร / ตามแพทย์สั่ง"></label>
+          <button class="primary full" type="submit">เพิ่มยา</button>
+        </form>
+      </div>
+      <div class="card"><h3>รายการยา</h3><div id="medList" class="list"></div></div>
+    </section>
+
+    <section class="page" id="labs">
+      <div class="card">
+        <h2>ผลตรวจสุขภาพ</h2>
+        <form id="labForm" class="form-grid">
+          <label>รายการ<input type="text" id="labName" required placeholder="เช่น HbA1c, LDL, Creatinine"></label>
+          <label>ค่า<input type="text" id="labValue" required placeholder="ผลตรวจ"></label>
+          <label>หน่วย<input type="text" id="labUnit" placeholder="เช่น mg/dL"></label>
+          <label>วันที่<input type="date" id="labDate" required></label>
+          <label class="full">ช่วงอ้างอิง/หมายเหตุ<input type="text" id="labRange" placeholder="ใส่ช่วงอ้างอิงจากใบแล็บ ไม่ใช้ค่ามาตรฐานเดา"></label>
+          <button class="primary full" type="submit">เพิ่มผลตรวจ</button>
+        </form>
+      </div>
+      <div class="card"><h3>ประวัติผลตรวจ</h3><div id="labList" class="list"></div></div>
+    </section>
+
+    <section class="page" id="profile">
+      <div class="card">
+        <h2>โปรไฟล์สุขภาพ</h2>
+        <form id="profileForm" class="form-grid">
+          <label>ส่วนสูง (cm)<input type="number" id="profileHeight" step="0.1" value="167"></label>
+          <label>เป้าหมายน้ำหนัก (kg)<input type="number" id="targetWeight" step="0.1" placeholder="ใส่เมื่อกำหนดแล้ว"></label>
+          <label>เป้ากิจกรรม/สัปดาห์ (นาที)<input type="number" id="weeklyGoal" min="0" value="150"></label>
+          <label>ความถี่ชั่งน้ำหนัก<select id="weightFreq"><option value="7">ทุก 7 วัน</option><option value="3">ทุก 3 วัน</option><option value="1">ทุกวัน</option></select></label>
+          <label>เตือนวัดความดันเช้า<input type="time" id="bpMorningTime" value="08:00"></label>
+          <label>เตือนวัดความดันเย็น<input type="time" id="bpEveningTime" value="20:00"></label>
+          <label class="full checkboxline"><input type="checkbox" id="bpReminderEnabled"> เปิดเตือนวัดความดันวันละ 2 ครั้ง</label>
+          <label class="full">โรคประจำตัว/ข้อจำกัด<input type="text" id="conditions" placeholder="กรอกเอง เช่น ปัญหาเข่า หรือข้อมูลที่แพทย์ยืนยัน"></label>
+          <label class="full">แพ้ยา<input type="text" id="allergies" placeholder="หากไม่มีข้อมูลให้เว้นว่าง"></label>
+          <button class="primary full" type="submit">บันทึกโปรไฟล์</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="page" id="report">
+      <div class="card rangebar">
+        <strong>ช่วงรายงาน</strong>
+        <div>
+          <button class="range active" data-days="7">7 วัน</button>
+          <button class="range" data-days="30">30 วัน</button>
+          <button class="range" data-days="90">90 วัน</button>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card"><h2>แนวโน้มความดัน</h2><canvas id="bpChart" width="700" height="280"></canvas></div>
+        <div class="card"><h2>แนวโน้มน้ำหนัก</h2><canvas id="weightChart" width="700" height="280"></canvas></div>
+      </div>
+      <div class="grid stats">
+        <div class="card stat"><span>ค่าเฉลี่ย SYS</span><strong id="avgSys">—</strong><small>ช่วงที่เลือก</small></div>
+        <div class="card stat"><span>ค่าเฉลี่ย DIA</span><strong id="avgDia">—</strong><small>ช่วงที่เลือก</small></div>
+        <div class="card stat"><span>น้ำหนักเปลี่ยน</span><strong id="weightChange">—</strong><small>ช่วงที่เลือก</small></div>
+        <div class="card stat"><span>กิจกรรม</span><strong id="activityTotal">—</strong><small>ช่วงที่เลือก</small></div>
+      </div>
+      <div class="card"><h3>Health Trend Flags</h3><div id="reportFlags" class="list"></div></div>
+<div class="card"><h3>ข้อมูลล่าสุด</h3><div id="recentLog" class="list"></div></div>
+    </section>
+
+    <section class="page" id="doctor">
+      <div class="card">
+        <div class="section-title">
+          <div><h2>Doctor Report</h2><p class="muted">สรุปข้อมูลที่บันทึกไว้เพื่อใช้ประกอบการพบแพทย์</p></div>
+          <button class="primary" id="printBtn">พิมพ์ / PDF</button>
+        </div>
+        <div id="doctorReport" class="doctor-report"></div>
+      </div>
+    </section>
+  
+    <section class="page" id="settings">
+      <div class="card">
+        <h2>บัญชีและข้อมูล</h2>
+        <form id="identityForm" class="form-grid">
+          <label>ชื่อโปรไฟล์<input type="text" id="displayName" placeholder="เช่น My Health"></label>
+          <label>อีเมลสำหรับ sync ภายหลัง<input type="email" id="syncEmail" placeholder="optional"></label>
+          <button class="secondary full" type="submit">บันทึกโปรไฟล์</button>
+        </form>
+        <hr class="soft">
+        <h3>สำรอง / นำเข้า</h3>
+        <div class="settings-grid">
+          <button class="primary" id="backupBtn">ดาวน์โหลด Backup</button>
+          <label class="file-btn">นำเข้า Backup<input type="file" id="importFile" accept=".json,application/json"></label>
+<label class="file-btn">นำเข้า Lab CSV<input type="file" id="labCsvFile" accept=".csv,text/csv"></label>
+          <button class="secondary" id="resetTodayBtn">รีเซ็ต Checklist วันนี้</button>
+          <button class="danger-btn" id="clearDataBtn">ล้างข้อมูลทั้งหมด</button>
+        </div>
+        <p class="muted">ข้อมูลหลักเก็บในอุปกรณ์นี้ด้วย localStorage และใช้ได้แบบ offline หลังโหลดครั้งแรก หากต้องการย้ายเครื่องให้ Export/Backup ก่อน</p>
+      </div>
+      <div class="card">
+        <h2>PWA / Offline Status</h2>
+        <div class="status-row"><span>Service Worker</span><strong id="swStatus">กำลังตรวจสอบ…</strong></div>
+        <div class="status-row"><span>Online</span><strong id="onlineStatus">—</strong></div>
+        <div class="status-row"><span>Notification</span><strong id="notificationStatus">—</strong></div>
+      </div>
+      <div class="card">
+        <h2>Health Trend Flags</h2>
+        <div id="trendFlags" class="list"></div>
+      </div>
+      <div class="card">
+        <h2>Cloud Integration</h2>
+        <p class="muted">v5 มี Supabase adapter ใช้งานได้เมื่อใส่ Project URL + publishable/anon key และรันไฟล์ SQL setup ใน Supabase</p><div class="status-row"><span>Sync mode</span><strong id="cloudMode">Local adapter</strong></div>
+      </div>
+    </section>
+
+
+    <section class="page" id="reminders">
+      <div class="card">
+        <div class="section-title">
+          <div><h2>Reminder Center</h2><p class="muted">รวมการเตือนยา ความดัน น้ำหนัก และกิจกรรม</p></div>
+          <button class="primary" id="runReminderCheckBtn">ตรวจตอนนี้</button>
+        </div>
+        <div id="reminderSummary" class="grid stats"></div>
+      </div>
+
+      <div class="card">
+        <h3>ตั้งค่าการเตือน</h3>
+        <form id="reminderForm" class="form-grid">
+          <label class="full checkboxline"><input type="checkbox" id="medReminderEnabled"> เปิดเตือนยา</label>
+          <label class="full checkboxline"><input type="checkbox" id="weightReminderEnabled"> เปิดเตือนชั่งน้ำหนัก</label>
+          <label>เวลาเตือนชั่งน้ำหนัก<input type="time" id="weightReminderTime" value="08:00"></label>
+          <label>เวลาเตือนกิจกรรม<input type="time" id="activityReminderTime" value="18:00"></label>
+          <label class="full checkboxline"><input type="checkbox" id="activityReminderEnabled"> เปิดเตือนกิจกรรม</label>
+          <button class="primary full" type="submit">บันทึก Reminder Settings</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>สิ่งที่ควรแจ้งเตือน</h3>
+        <div id="reminderQueue" class="list"></div>
+      </div>
+    </section>
+
+    <section class="page" id="quality">
+      <div class="card">
+        <div class="section-title">
+          <div><h2>Data Quality</h2><p class="muted">ตรวจข้อมูลขาด ซ้ำ หรือไม่สมเหตุผลก่อนใช้วิเคราะห์</p></div>
+          <button class="secondary" id="scanQualityBtn">สแกนใหม่</button>
+        </div>
+        <div id="qualityScoreWrap"></div>
+      </div>
+      <div class="card">
+        <h3>รายการที่ควรแก้ไข</h3>
+        <div id="qualityIssues" class="list"></div>
+      </div>
+    </section>
+
+
+    <section class="page" id="cloud">
+      <div class="card">
+        <div class="section-title">
+          <div>
+            <h2>Cloud Sync • Supabase</h2>
+            <p class="muted">เชื่อมบัญชีเพื่อสำรองและใช้งานข้อมูลสุขภาพข้ามอุปกรณ์</p>
+          </div>
+          <span class="sync-state" id="cloudBadge">Local only</span>
+        </div>
+
+        <div class="cloud-grid">
+          <div>
+            <h3>1. Supabase Configuration</h3>
+            <form id="supabaseConfigForm" class="form-grid">
+              <label class="full">Project URL<input type="url" id="supabaseUrl" placeholder="https://xxxx.supabase.co"></label>
+              <label class="full">Publishable / anon key<input type="password" id="supabaseKey" placeholder="sb_publishable_... หรือ anon key"></label>
+              <label class="full checkboxline"><input type="checkbox" id="rememberCloudConfig"> จำค่าการเชื่อมต่อบนอุปกรณ์นี้</label>
+              <button class="secondary full" type="submit">บันทึกและเชื่อมต่อ</button>
+            </form>
+            <p class="tiny muted">ใช้เฉพาะ publishable/anon key ฝั่ง browser ห้ามใส่ service_role key</p>
+          </div>
+
+          <div>
+            <h3>2. Sign in</h3>
+            <div id="authSignedOut">
+              <form id="magicLinkForm" class="form-grid">
+                <label class="full">Email<input type="email" id="authEmail" required placeholder="name@example.com"></label>
+                <button class="primary full" type="submit">ส่ง Magic Link / OTP</button>
+              </form>
+              <p class="tiny muted">เมื่อกด ระบบจะส่งลิงก์เข้าสู่ระบบทางอีเมลตามการตั้งค่า Supabase Auth</p>
+            </div>
+            <div id="authSignedIn" style="display:none">
+              <div class="signed-card">
+                <strong id="signedEmail">—</strong>
+                <small id="signedUserId">—</small>
+              </div>
+              <button class="secondary" id="signOutBtn">Sign out</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h3>Sync Control</h3>
+          <div class="sync-actions">
+            <button class="primary" id="syncNowBtn">Sync Now</button>
+            <button class="secondary" id="pushCloudBtn">Upload → Cloud</button>
+            <button class="secondary" id="pullCloudBtn">Cloud → Device</button>
+          </div>
+          <div class="status-row"><span>Connection</span><strong id="cloudConnection">Not configured</strong></div>
+          <div class="status-row"><span>Last sync</span><strong id="lastSync">Never</strong></div>
+          <div class="status-row"><span>Cloud revision</span><strong id="cloudRevision">—</strong></div>
+        </div>
+
+        <div class="card">
+          <h3>Conflict Policy</h3>
+          <p class="muted">v5 ใช้ snapshot revision + updated_at. หากทั้งอุปกรณ์และ Cloud เปลี่ยนหลัง sync ล่าสุด ระบบจะไม่เขียนทับอัตโนมัติ แต่ให้เลือกแหล่งข้อมูลก่อน</p>
+          <div id="conflictBox" class="list"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Sync History</h3>
+        <div id="syncHistory" class="list"></div>
+      </div>
+    </section>
+
+</main>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+</body>
+</html>
