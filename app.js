@@ -2,7 +2,7 @@
 // ---------- v7.0 Build / Deployment Guard ----------
 const PH_BUILD_VERSION='7.0';
 const PH_BUILD_ID='7.0.0-20260810';
-const PH_OCR_ENGINE='V7.0 Geometry-Calibrated Multi-pass';
+const PH_OCR_ENGINE='V7.1 Crop-First Result Engine';
 window.__PH_BUILD__={version:PH_BUILD_VERSION,id:PH_BUILD_ID,ocr:PH_OCR_ENGINE};
 const KEY='healthcare_v62';
 const OLD='healthcare_v6';
@@ -1074,65 +1074,83 @@ function v68CropCanvas(src,x0,y0,x1,y1,variant='contrast'){
  }
  ctx.putImageData(im,0,0);return c;
 }
-function v68NormalizeNumericToken(txt){
- let t=String(txt||'').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/,/g,'.').replace(/\s+/g,'');
- const m=t.match(/\d+(?:\.\d+)?/); return m?m[0]:'';
+function v71NumericTokens(txt){
+ let t=String(txt||'').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/,/g,'.');
+ return [...t.matchAll(/\d+(?:\.\d+)?/g)].map(m=>({raw:m[0],v:+m[0]})).filter(x=>Number.isFinite(x.v));
 }
-function v68Pick(spec,txt){
- const tok=v68NormalizeNumericToken(txt); if(!tok)return null;
- const v=+tok; if(!Number.isFinite(v)||v<spec.min||v>spec.max||v65IsRefValue(spec,v))return null;
- return {v,raw:tok};
+function v71CandidateScore(spec,c,confidence=0){
+ if(c.v<spec.min||c.v>spec.max||v65IsRefValue(spec,c.v))return -999;
+ let score=20+Math.max(0,Math.min(20,confidence/5));
+ const hasDot=c.raw.includes('.');
+ if(spec.shape==='decimal')score+=hasDot?18:-5;
+ if(spec.name==='WBC'){ if(c.v>=3&&c.v<=15)score+=15; if(hasDot)score+=12; }
+ if(spec.name==='Hb'){ if(c.v>=10&&c.v<=20)score+=18; if(hasDot)score+=8; }
+ if(spec.name==='Hct'){ if(c.v>=30&&c.v<=60)score+=18; if(hasDot)score+=8; }
+ if(spec.name==='LDL-C'){ if(c.v>=40&&c.v<=300)score+=18; if(c.v<20)score-=35; }
+ if(spec.name==='eGFR'){ if(c.v>=30&&c.v<=150)score+=18; if(c.v<10)score-=35; }
+ if(spec.name==='SGPT (ALT)'||spec.name==='SGOT (AST)'||spec.name==='Alk-phos'){ if(c.v>=5&&c.v<=250)score+=10; }
+ if(spec.name==='HbA1c'){ if(c.v>=4&&c.v<=15)score+=20; if(hasDot)score+=10; }
+ if(spec.name==='PSA'){ if(c.v>=0&&c.v<=20)score+=15; if(hasDot)score+=10; }
+ return score;
+}
+function v71PickBest(spec,reads){
+ const all=[];
+ for(const r of reads){for(const c of v71NumericTokens(r.raw))all.push({...c,confidence:r.confidence||0,pass:r.pass||''});}
+ if(!all.length)return null;
+ const grouped=new Map();
+ for(const c of all){const k=String(c.v);const g=grouped.get(k)||{v:c.v,raw:c.raw,count:0,score:0,passes:[]};g.count++;g.score+=v71CandidateScore(spec,c,c.confidence);g.passes.push(c.pass);grouped.set(k,g)}
+ const ranked=[...grouped.values()].filter(g=>g.score>-500).sort((a,b)=>(b.count*35+b.score)-(a.count*35+a.score));
+ return ranked[0]||null;
+}
+async function v71RecognizeCell(worker,crop,spec,tag){
+ const reads=[];
+ const configs=[
+   {psm:'7',wl:'0123456789.,',pass:tag+'-line'},
+   {psm:'8',wl:'0123456789.,',pass:tag+'-word'},
+   {psm:'13',wl:'0123456789.,',pass:tag+'-raw'}
+ ];
+ for(const cfg of configs){
+   try{await worker.setParameters({tessedit_pageseg_mode:cfg.psm,tessedit_char_whitelist:cfg.wl,preserve_interword_spaces:'0'});const r=await worker.recognize(crop);reads.push({raw:(r.data?.text||'').trim(),confidence:r.data?.confidence||0,pass:cfg.pass});}catch(e){}
+ }
+ return reads;
 }
 async function v68ExtractTemplateRows(file,rotation,baseText){
  const base=await v622CanvasFromFile(file,rotation||0,'soft');
  if(!v68TemplateLikely(baseText,base))return [];
  const worker=await getOcrWorker(),rows=[];
- try{await worker.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789.,',preserve_interword_spaces:'0'});}catch(e){}
  const passes=[
-   // v7.0: Result column only. The v6.8 right edge (.36-.38) crossed into
-   // interpretation/reference columns and produced values such as LDL=6, Hb=3, WBC=45.
-   {x0:.232,x1:.312,dy:.0000,variant:'contrast'},
-   {x0:.238,x1:.306,dy:-.0007,variant:'binary'},
-   {x0:.228,x1:.318,dy:.0007,variant:'soft'}
+   {x0:.238,x1:.323,dy:.0000,variant:'soft',tag:'soft'},
+   {x0:.242,x1:.320,dy:-.0005,variant:'contrast',tag:'contrast'},
+   {x0:.234,x1:.326,dy:.0005,variant:'binary',tag:'binary'}
  ];
  for(let i=0;i<V68_TEMPLATE_ROWS.length;i++){
    const [name,y]=V68_TEMPLATE_ROWS[i],spec=V65_LABS.find(x=>x.name===name);if(!spec)continue;
-   setOcrProgress(`V7.0 อ่านช่อง Result ที่ปรับเทียบตำแหน่ง ${i+1}/${V68_TEMPLATE_ROWS.length}: ${name}`,74+Math.round(22*(i+1)/V68_TEMPLATE_ROWS.length));
-   const seen=[];
-   for(const ps of passes){
-     const crop=v68CropCanvas(base,ps.x0,y-0.0095+ps.dy,ps.x1,y+0.0095+ps.dy,ps.variant);
-     try{const r=await worker.recognize(crop), raw=(r.data?.text||'').trim(), pick=v68Pick(spec,raw);seen.push({raw,pick,confidence:r.data?.confidence||0});}catch(e){seen.push({raw:'',pick:null,confidence:0});}
-   }
-   const counts=new Map(); for(const a of seen)if(a.pick){const k=String(a.pick.v);counts.set(k,(counts.get(k)||0)+1)}
-   const ranked=[...counts.entries()].sort((a,b)=>b[1]-a[1]); const winner=ranked[0];
-   if(!winner)continue;
-   const consensus=winner[1]>=2, value=winner[0],ref=v65ReferenceMeta(spec);
-   // A clinically extreme value may be genuine, so v7.0 never rewrites it. It only
-   // downgrades confidence and requires manual comparison with the visible cell crop.
-   const vv=+value;
-   const suspicious=(spec.name==='Hb'&&vv<7)||(spec.name==='WBC'&&(vv<1||vv>30))||
-     (spec.name==='LDL-C'&&vv<20)||(spec.name==='eGFR'&&vv<10)||
-     (spec.name==='PSA'&&vv>100);
-   let cropPreview='';
-   try{cropPreview=v68CropCanvas(base,.225,y-.011,.320,y+.011,'soft').toDataURL('image/jpeg',.78)}catch(e){}
+   setOcrProgress(`V7.1 อ่านช่อง Result แบบ Crop-First ${i+1}/${V68_TEMPLATE_ROWS.length}: ${name}`,74+Math.round(22*(i+1)/V68_TEMPLATE_ROWS.length));
+   const reads=[];
+   for(const ps of passes){const crop=v68CropCanvas(base,ps.x0,y-0.0105+ps.dy,ps.x1,y+0.0105+ps.dy,ps.variant);reads.push(...await v71RecognizeCell(worker,crop,spec,ps.tag));}
+   const winner=v71PickBest(spec,reads);if(!winner)continue;
+   const value=String(winner.v),ref=v65ReferenceMeta(spec),vv=winner.v;
+   const strong=winner.count>=2;
+   const suspicious=(spec.name==='Hb'&&vv<7)||(spec.name==='WBC'&&(vv<1||vv>30))||(spec.name==='LDL-C'&&vv<20)||(spec.name==='eGFR'&&vv<10)||(spec.name==='PSA'&&vv>100);
+   let cropPreview='';try{cropPreview=v68CropCanvas(base,.225,y-.0115,.330,y+.0115,'soft').toDataURL('image/jpeg',.82)}catch(e){}
    rows.push({selected:false,name:spec.name,value,unit:spec.unit,date:v622ParseDate(baseText),range:ref.range,refLow:spec.low,refHigh:spec.high,refMode:ref.mode,category:spec.cat,
-     confidence:(consensus&&!suspicious)?'high':'low',reviewRequired:true,
-     qualityReason:suspicious?'V7.0: ค่านี้ผิดปกติมากสำหรับ OCR กรุณาเทียบภาพช่อง Result ด้านล่างก่อนบันทึก':(consensus?'V7.0: ตำแหน่ง Result ตรงแถว + OCR 2/3 รอบอ่านตรงกัน • ยังต้องเทียบใบจริงก่อนบันทึก':'V7.0: OCR หลายรอบอ่านไม่ตรงกัน • ห้ามบันทึกจนกว่าจะตรวจแก้'),
-     ocrCropPreview:cropPreview,ocrCellText:seen.map((a,j)=>`P${j+1}:${a.raw||'∅'}`).join(' | '),sourceMode:'v7.0-geometry-consensus',ocrConsensus:consensus});
+     confidence:(strong&&!suspicious)?'high':'low',reviewRequired:true,
+     qualityReason:suspicious?'V7.1: ค่านี้ผิดปกติมากสำหรับ OCR กรุณาเทียบภาพช่อง Result ด้านล่างก่อนบันทึก':(strong?'V7.1: Crop-First อ่านค่าจากช่อง Result โดยตรง • ยังต้องเทียบใบจริงก่อนบันทึก':'V7.1: OCR หลายโหมดอ่านไม่ตรงกัน • ห้ามบันทึกจนกว่าจะตรวจแก้'),
+     ocrCropPreview:cropPreview,ocrCellText:reads.map(a=>`${a.pass}:${a.raw||'∅'}`).join(' | '),sourceMode:'v7.1-crop-first',ocrConsensus:strong});
  }
  try{await worker.setParameters({tessedit_pageseg_mode:'6',tessedit_char_whitelist:'',preserve_interword_spaces:'1'});}catch(e){}
  return rows;
 }
 function v68MergeRows(textRows,templateRows){
- const by=new Map(); for(const r of textRows||[])by.set(r.name,r);
+ const by=new Map();for(const r of textRows||[])by.set(r.name,r);
  for(const r of templateRows||[]){
    const old=by.get(r.name);
-   // v7.0 Data Quality Gate: a geometry crop may replace full-page text only when
-   // consensus is high AND the value passed the suspicious-value guard.
-   if(r.ocrConsensus&&r.confidence==='high'&&v63PlausibleRow(r)){
+   // v7.1: crop-first. If the crop produced a plausible value, keep it as the visible value.
+   // A disagreement with full-page OCR lowers confidence but never replaces the crop with a worse candidate.
+   if(v63PlausibleRow(r)){
      if(old&&String(old.value)!==String(r.value)){
        r.confidence='low';r.reviewRequired=true;
-       r.qualityReason='V7.0: Result-crop และ full-page OCR อ่านไม่ตรงกัน • กรุณาเทียบภาพช่อง Result ก่อนบันทึก';
+       r.qualityReason='V7.1: Crop-First และ full-page OCR อ่านไม่ตรงกัน • ใช้ค่า crop เป็นหลักแต่ต้องตรวจภาพก่อนบันทึก';
      }
      by.set(r.name,r);
    }else if(!old)by.set(r.name,r);
@@ -1172,7 +1190,7 @@ async function v622ProcessFiles(files){
    // dedupe detected lab rows across multiple pages/files
    const seen=new Set();docImportState.rows=docImportState.rows.filter(r=>{const k=cleanName(r.name)+'|'+r.value+'|'+r.date;if(seen.has(k))return false;seen.add(k);return true});
    if(id('ocrRawText'))id('ocrRawText').value=docImportState.text;if(id('ocrResultArea'))id('ocrResultArea').style.display='block';
-   setOcrProgress('อ่านเอกสารเสร็จแล้ว — V7.0 • Geometry-Calibrated Multi-pass: จับช่อง Result จริง + อ่าน 3 รอบ + แสดงภาพช่องต้นฉบับ',100);v622RenderDocumentMeta();renderDetectedRows();
+   setOcrProgress('อ่านเอกสารเสร็จแล้ว — V7.1 • Crop-First Result Engine: อ่านช่อง Result หลายโหมด + ให้ crop เป็นแหล่งหลัก + แสดงภาพต้นฉบับ',100);v622RenderDocumentMeta();renderDetectedRows();
    if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').disabled=!(docImportState.rows.some(r=>r.selected)||docImportState.docs.length);
  }catch(err){console.error(err);setOcrProgress('อ่านเอกสารไม่สำเร็จ',0);if(id('ocrResultArea'))id('ocrResultArea').style.display='block';alert('อ่านเอกสารไม่สำเร็จ: '+(err?.message||err))}
 }

@@ -1,6 +1,5 @@
 {
-  "version": "7.0",
-  "buildId": "7.0.0-20260810",
-  "ocrEngine": "V7.0 Geometry-Calibrated Multi-pass",
-  "deployedFrom": "main/root"
+  "version": "V7.1",
+  "buildId": "7.1.0-20260810",
+  "ocrEngine": "V7.1 Crop-First Result Engine"
 }

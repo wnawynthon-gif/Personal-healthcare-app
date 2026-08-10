@@ -1,6 +1,6 @@
-const BUILD='7.0.0-20260810';
+const BUILD='7.1.0-20260810';
 const CACHE='personal-health-'+BUILD;
-const CORE=['./','./index.html','./styles.css?v=7.0.0','./app.js?v=7.0.0-20260810','./manifest.json?v=7.0.0','./build.json'];
+const CORE=['./','./index.html','./styles.css?v=7.0.0','./app.js?v=7.1.0-20260810','./manifest.json?v=7.0.0','./build.json'];
 self.addEventListener('install',e=>e.waitUntil((async()=>{const c=await caches.open(CACHE);for(const a of CORE){try{await c.add(a)}catch{}}await self.skipWaiting()})()));
 self.addEventListener('activate',e=>e.waitUntil((async()=>{for(const k of await caches.keys())if(k!==CACHE)await caches.delete(k);await self.clients.claim()})()));
 self.addEventListener('message',e=>{if(e.data==='SKIP_WAITING')self.skipWaiting()});
