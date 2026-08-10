@@ -40,3 +40,7 @@
 .detect-head{font-size:11px;color:#718382;font-weight:800;background:#f4f8f7}.detect-ref{grid-column:2/6;display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
 .privacy-note{padding:10px 12px;background:#eef8f4;border-radius:12px;color:#4d6e68;font-size:12px}
 @media(max-width:760px){.doc-import-grid{grid-template-columns:1fr}.detect-row{grid-template-columns:30px 1fr 1fr}.detect-row .detect-unit{grid-column:2}.detect-row .detect-date{grid-column:3}.detect-row .remove-detect{grid-column:3}.detect-ref{grid-column:2/4;grid-template-columns:1fr}}
+
+
+/* v6.2.2 document intelligence */
+.doc-classifier-card{margin:12px 0 16px;padding:14px;border:1px solid #dce9e7;border-radius:14px;background:#f8fbfa}.doc-classifier-card label{display:block;margin-top:8px;font-weight:600}.doc-classifier-card select,.doc-classifier-card textarea{width:100%;margin-top:6px;padding:10px;border:1px solid #d4e0df;border-radius:10px;background:#fff;font:inherit}.doc-card{padding:12px;border:1px solid #e1e9e8;border-radius:12px;background:#fff}.doc-card small{display:block;color:#667;margin-top:5px}.doc-kind{font-size:12px;padding:3px 8px;border-radius:999px;background:#e8f3f1;color:#0f766e;margin-left:6px}.import-file-queue{display:grid;gap:6px;margin-top:8px}.import-file-queue small{display:block}

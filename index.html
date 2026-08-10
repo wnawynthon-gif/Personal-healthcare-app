@@ -12,7 +12,7 @@
 <div class="app">
   <header class="topbar">
     <div>
-      <div class="eyebrow">PERSONAL HEALTHCARE • V6.2.1.2</div>
+      <div class="eyebrow">PERSONAL HEALTHCARE • V6.2.2</div>
       <h1>สุขภาพของฉัน</h1>
       <p id="todayText"></p>
     </div>
@@ -142,13 +142,13 @@
             <h2>นำเข้าผลตรวจจากรูป / PDF</h2>
             <p class="muted">JPG, PNG, รูปจากกล้อง หรือ PDF → อ่านข้อความ → ตรวจแก้ → ยืนยันก่อนบันทึก</p>
           </div>
-          <span class="pill">V6.2.1</span>
+          <span class="pill">V6.2.2</span>
         </div>
 
         <div class="doc-import-grid">
           <label class="doc-drop" id="labDocDrop">
-            <input type="file" id="labDocFile" accept="image/*,.pdf,application/pdf">
-            <strong>📄 เลือกรูปหรือ PDF ผลตรวจ</strong>
+            <input type="file" id="labDocFile" accept="image/*,.pdf,application/pdf" multiple>
+            <strong>📄 เลือกรูปหรือ PDF ผลตรวจ (เลือกหลายไฟล์ได้)</strong>
             <small>ไฟล์จะถูกประมวลผลใน browser ของอุปกรณ์ก่อน ไม่อัปโหลดไป Supabase จนกว่าคุณจะกดยืนยันผล</small>
           </label>
 
@@ -171,6 +171,22 @@
             <button class="secondary" id="clearOcrBtn" type="button">ล้าง</button>
           </div>
 
+          <div class="doc-classifier-card">
+            <div class="section-title"><strong>ชนิดเอกสารที่ตรวจพบ</strong><span id="docTypeBadge" class="pill">กำลังตรวจ</span></div>
+            <label>ชนิดเอกสาร
+              <select id="docTypeSelect">
+                <option value="lab">ผลตรวจเลือด / Health Check</option>
+                <option value="xray">Chest X-ray</option>
+                <option value="ultrasound">Ultrasound</option>
+                <option value="ecg">ECG</option>
+                <option value="other">เอกสารทางการแพทย์อื่น</option>
+              </select>
+            </label>
+            <label>สรุปที่อ่านได้จากเอกสาร
+              <textarea id="docStructuredSummary" rows="5" placeholder="ระบบจะดึง Findings / Impression / ECG interpretation อัตโนมัติ และคุณแก้ไขได้ก่อนบันทึก"></textarea>
+            </label>
+          </div>
+
           <div class="section-title import-title">
             <div><h3>Preview ก่อนบันทึก</h3><p class="muted">OCR อาจอ่านตัวเลข/หน่วยผิด กรุณาตรวจทุกแถว</p></div>
             <span id="detectedCount" class="pill">0 รายการ</span>
@@ -178,6 +194,11 @@
           <div id="detectedLabRows" class="detected-table"></div>
           <button class="primary full" id="confirmDetectedLabsBtn" type="button" disabled>ยืนยันและบันทึกผลที่เลือก</button>
         </div>
+      </div>
+
+      <div class="card">
+        <h3>เอกสารทางการแพทย์ที่นำเข้า</h3>
+        <div id="medicalDocumentList" class="list"></div>
       </div>
 
       <div class="card">

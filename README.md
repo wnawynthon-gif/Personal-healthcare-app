@@ -1,7 +1,14 @@
-# Personal Healthcare App v6.2.1
+# Personal Healthcare App v6.2.2
 
-## New in v6.2.1
-- Upload lab reports as JPG / PNG / browser-supported images / PDF
+## New in v6.2.2
+- Multi-file image/PDF import
+- Auto document classification: lab/health check, chest X-ray, ultrasound, ECG, other
+- Image preprocessing and automatic 90°/270° OCR retry when confidence is poor
+- More robust known-lab extraction from Thai/English health-check forms
+- Structured Findings/Impression/ECG summary saved separately from lab rows
+- Imported medical-document history
+- Import remains review-first: user can edit text, document type, summary, and rows before save
+
 - iPad/Safari OCR fix: explicit worker/core/language paths + English fallback
 - OCR failures now show the real error and keep manual review available
 - Service worker changed to network-first for app updates

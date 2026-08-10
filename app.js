@@ -804,3 +804,186 @@ if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').onclick=()=>{
 window.docImportState=docImportState;window.renderDetectedRows=renderDetectedRows;
 
 window.db=db;
+
+// ---------- v6.2.2 Robust Medical Document Import ----------
+db.documents=db.documents||[];
+const V622_DOC_LABELS={lab:'Lab / Health Check',xray:'Chest X-ray',ultrasound:'Ultrasound',ecg:'ECG',other:'Medical document'};
+
+function v622ParseDate(text){
+ const m=String(text||'').match(/\b(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})\b/);
+ if(!m)return new Date().toISOString().slice(0,10);
+ let y=+m[3]; if(y>2400)y-=543;
+ const d=new Date(y,+m[2]-1,+m[1]);
+ return isNaN(d)?new Date().toISOString().slice(0,10):d.toISOString().slice(0,10);
+}
+function v622Classify(text){
+ const t=cleanName(text);
+ if(/electrocardiogram|normal sinus rhythm|qrs|qtc|qt qtc|ventricular rate|ecg|ekg/.test(t))return'ecg';
+ if(/ultrasound|us whole abdomen|whole abdomen|gallbladder|portal veins|hepatomegaly|fatty liver|prostate gland/.test(t))return'ultrasound';
+ if(/chest x ray|chest pa|pulmonary infiltration|pleural effusion|pneumothorax|cardiomediastinal|bony thorax/.test(t))return'xray';
+ if(/health report|blood chemistry|cbc|cholesterol|triglyceride|hba1c|uric acid|creatinine|fasting blood|fbs|platelet/.test(t))return'lab';
+ return'other';
+}
+function v622Section(text,startRx,endRx){
+ const s=String(text||'').replace(/\r/g,''); const m=s.match(startRx); if(!m)return'';
+ let out=s.slice((m.index||0)+m[0].length);
+ if(endRx){const e=out.search(endRx); if(e>=0)out=out.slice(0,e)}
+ return out.replace(/\n{3,}/g,'\n\n').trim().slice(0,2200);
+}
+function v622Summary(type,text){
+ const raw=String(text||'');
+ if(type==='xray'){
+   const imp=v622Section(raw,/IMPRESSION\s*:?/i,/\b(?:Request|Report By|Print By)\b/i);
+   const find=v622Section(raw,/FINDINGS\s*:?/i,/IMPRESSION\s*:?/i);
+   return [find&&'Findings: '+find,imp&&'Impression: '+imp].filter(Boolean).join('\n\n') || raw.match(/No active chest disease\.?/i)?.[0] || '';
+ }
+ if(type==='ultrasound'){
+   const imp=v622Section(raw,/IMPRESSION\s*:?/i,/\b(?:Request|Report By|Print By)\b/i);
+   const find=v622Section(raw,/FINDINGS\s*:?/i,/IMPRESSION\s*:?/i);
+   return [find&&'Findings: '+find,imp&&'Impression: '+imp].filter(Boolean).join('\n\n').slice(0,3000);
+ }
+ if(type==='ecg'){
+   const parts=[];
+   const rate=raw.match(/(?:ventricular rate|heart rate|rate)?\s*[:=]?\s*(\d{2,3})\s*bpm/i); if(rate)parts.push('Heart rate: '+rate[1]+' bpm');
+   const rhythm=raw.match(/normal sinus rhythm/i); if(rhythm)parts.push('Rhythm: Normal sinus rhythm');
+   const interp=raw.match(/normal ecg/i); if(interp)parts.push('Interpretation: Normal ECG');
+   for(const [label,rx] of [['PR',/\bPR\s*[:=]?\s*(\d{2,4})\s*ms/i],['QRS',/\bQRS\s*[:=]?\s*(\d{2,4})\s*ms/i],['QT/QTc',/\bQT\s*\/\s*QTc\s*[:=]?\s*([\d/]+)\s*ms/i]]){const m=raw.match(rx);if(m)parts.push(label+': '+m[1]+' ms')}
+   return parts.join('\n') || v622Section(raw,/ECG/i,null).slice(0,1200);
+ }
+ if(type==='lab')return 'ตรวจพบเอกสารผลตรวจสุขภาพ/แล็บ • ตรวจและยืนยันรายการด้านล่างก่อนบันทึก';
+ return raw.slice(0,1500);
+}
+
+const V622_LABS=[
+ ['HbA1c',/(?:HbA1c|HBA1C)/i,'%',null,null,'glucose'],
+ ['FBS',/(?:\bFBS\b|Fasting\s*(?:Blood\s*)?(?:Sugar|Glucose)|น้ำตาลในเลือด)/i,'mg/dL',70,99,'glucose'],
+ ['BUN',/\bBUN\b/i,'mg/dL',6,20,'kidney'],
+ ['Creatinine',/(?:\bCreatinine\b|\bCr\b)/i,'mg/dL',0.67,1.17,'kidney'],
+ ['eGFR',/\beGFR\b/i,'mL/min/1.73m2',90,null,'kidney'],
+ ['Uric acid',/(?:Uric\s*acid|กรดยูริก)/i,'mg/dL',3.4,7,'other'],
+ ['Cholesterol',/(?:Total\s*Cholesterol|\bCholesterol\b)/i,'mg/dL',null,200,'lipid'],
+ ['Triglyceride',/(?:Triglyceride|Triglycerides|\bTG\b)/i,'mg/dL',null,150,'lipid'],
+ ['HDL-C',/(?:HDL[- ]?C|\bHDL\b)/i,'mg/dL',55,null,'lipid'],
+ ['LDL-C',/(?:LDL[- ]?C|\bLDL\b)/i,'mg/dL',null,100,'lipid'],
+ ['SGOT (AST)',/(?:SGOT|\bAST\b)/i,'U/L',null,41,'liver'],
+ ['SGPT (ALT)',/(?:SGPT|\bALT\b)/i,'U/L',null,42,'liver'],
+ ['Alk-phos',/(?:Alk[- ]?phos|Alkaline\s*Phosphatase|\bALP\b)/i,'U/L',40,130,'liver'],
+ ['Hb',/(?:\bHb\b|Hemoglobin|Haemoglobin)/i,'g/dL',12.7,16.9,'blood'],
+ ['Hct',/(?:\bHct\b|Hematocrit|Haematocrit)/i,'%',40.3,51.9,'blood'],
+ ['WBC',/\bWBC\b/i,'10^9/L',4.5,11.3,'blood'],
+ ['Platelet',/(?:Platelet|PLT)/i,'10^9/L',160,356,'blood'],
+ ['PSA',/\bPSA\b/i,'ng/mL',null,null,'other']
+];
+function v622FindKnownLab(text,nameRx){
+ const normalized=normalizeOcrText(text); const lines=normalized.split(/\n+/);
+ for(const line of lines){
+   const m=line.match(nameRx); if(!m)continue;
+   const tail=line.slice((m.index||0)+m[0].length).replace(/[Oo](?=\d)/g,'0');
+   const nums=[...tail.matchAll(/-?\d+(?:\.\d+)?/g)].map(x=>({v:+x[0],i:x.index||0}));
+   if(nums.length){
+     // Ignore obvious years/IDs and prefer the first plausible result after the test name.
+     const n=nums.find(x=>Math.abs(x.v)<10000 && !(x.v>=1900&&x.v<=2600)); if(n)return String(n.v);
+   }
+ }
+ // OCR sometimes flattens a row. Restrict the search window after the alias.
+ const flat=normalized.replace(/\n/g,' '); const m=flat.match(nameRx); if(m){
+   const tail=flat.slice((m.index||0)+m[0].length,(m.index||0)+m[0].length+55);
+   const n=tail.match(/(?:^|[^\d])(-?\d+(?:\.\d+)?)/); if(n){const v=+n[1];if(!(v>=1900&&v<=2600))return String(v)}
+ }
+ return null;
+}
+function detectLabRowsFromText(text){
+ const rows=[],seen=new Set(),date=v622ParseDate(text);
+ // High-confidence dictionary extraction first.
+ for(const [name,rx,unit,low,high,cat] of V622_LABS){
+   const value=v622FindKnownLab(text,rx); if(value==null)continue;
+   let mode='none',range=''; if(low!=null&&high!=null){mode='range';range=`${low}-${high}`} else if(high!=null){mode='max';range=`<${high}`} else if(low!=null){mode='min';range=`>${low}`}
+   const key=name.toLowerCase();seen.add(key); rows.push({selected:true,name,value,unit,date,range,refLow:low,refHigh:high,refMode:mode,category:cat});
+ }
+ // Generic line parser catches tests not in the dictionary, but avoids duplicate known tests.
+ const lines=normalizeOcrText(text).split(/\n+/).map(x=>x.trim()).filter(Boolean);
+ const refRange=/(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)/i;
+ const valUnit=new RegExp('(-?\\d+(?:\\.\\d+)?)\\s*('+UNIT_RX+')?','i');
+ for(const raw of lines){
+   const line=raw.replace(/\s{2,}/g,' ').trim(); if(line.length<3||line.length>180)continue;
+   const m=line.match(valUnit); if(!m)continue; const value=m[1],unit=m[2]||'';
+   const before=line.slice(0,m.index).replace(/[:;•]+$/,'').trim(); if(before.length<2)continue;
+   if(/^(page|date|dob|age|sex|time|patient|reference|range|result|hn|request|report|print)$/i.test(before)||/^\d/.test(before))continue;
+   if(/blood pressure|weight|height|bmi|pulse|entry date|request date|report date|x ray|x-ray|age/i.test(before))continue;
+   const name=before.replace(/^[^\p{L}]+/gu,'').trim(); if(!name||name.length>55)continue;
+   const nk=cleanName(name); if([...seen].some(k=>nk.includes(k)||k.includes(nk)))continue;
+   let low=null,high=null,mode='none',range='';const after=line.slice((m.index||0)+m[0].length);const rr=after.match(refRange);
+   if(rr){low=+rr[1];high=+rr[2];mode='range';range=`${rr[1]}-${rr[2]}`}else{const mx=after.match(/[<≤]\s*(-?\d+(?:\.\d+)?)/),mn=after.match(/[>≥]\s*(-?\d+(?:\.\d+)?)/);if(mx){high=+mx[1];mode='max';range=`<${mx[1]}`}else if(mn){low=+mn[1];mode='min';range=`>${mn[1]}`}}
+   rows.push({selected:true,name,value,unit,date,range,refLow:low,refHigh:high,refMode:mode,category:'auto'});
+ }
+ return rows.slice(0,80);
+}
+
+async function v622CanvasFromFile(file,rotation=0){
+ const bmp=await createImageBitmap(file,{imageOrientation:'from-image'}).catch(()=>createImageBitmap(file));
+ const max=2200,scale=Math.min(2,max/Math.max(bmp.width,bmp.height),1.65); const w=Math.max(1,Math.round(bmp.width*scale)),h=Math.max(1,Math.round(bmp.height*scale));
+ const swap=Math.abs(rotation)%180===90,canvas=document.createElement('canvas');canvas.width=swap?h:w;canvas.height=swap?w:h;
+ const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.save();ctx.translate(canvas.width/2,canvas.height/2);ctx.rotate(rotation*Math.PI/180);ctx.drawImage(bmp,-w/2,-h/2,w,h);ctx.restore();
+ // Mild grayscale/contrast cleanup improves photographs of paper without destroying ECG lines.
+ const im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data;
+ for(let i=0;i<d.length;i+=4){let y=.299*d[i]+.587*d[i+1]+.114*d[i+2];y=Math.max(0,Math.min(255,(y-128)*1.18+128));d[i]=d[i+1]=d[i+2]=y}
+ ctx.putImageData(im,0,0);return canvas;
+}
+async function v622OcrImage(file){
+ const worker=await getOcrWorker();
+ const first=await v622CanvasFromFile(file,0);let result=await worker.recognize(first);let best={text:result.data?.text||'',confidence:result.data?.confidence||0,rotation:0};
+ if(best.confidence<48||best.text.replace(/\s/g,'').length<80){
+   for(const rot of [90,270]){setOcrProgress(`OCR หมุนภาพ ${rot}°…`,45+rot/10);const c=await v622CanvasFromFile(file,rot);const r=await worker.recognize(c);const cand={text:r.data?.text||'',confidence:r.data?.confidence||0,rotation:rot};if(cand.confidence>best.confidence+3||cand.text.length>best.text.length*1.35)best=cand}
+ }
+ return best;
+}
+function v622RenderDocumentMeta(){
+ const docs=docImportState.docs||[]; const badge=id('docTypeBadge'),sel=id('docTypeSelect'),sum=id('docStructuredSummary');
+ if(!docs.length){if(badge)badge.textContent='ยังไม่พบ';return}
+ if(docs.length===1){const d=docs[0];if(badge)badge.textContent=V622_DOC_LABELS[d.type]||d.type;if(sel)sel.value=d.type;if(sum)sum.value=d.summary||''}
+ else{if(badge)badge.textContent=`${docs.length} เอกสาร`;if(sum)sum.value=docs.map((d,i)=>`[${i+1}] ${d.name} • ${V622_DOC_LABELS[d.type]}\n${d.summary||''}`).join('\n\n')}
+}
+function v622RenderMedicalDocuments(){
+ const host=id('medicalDocumentList');if(!host)return;const docs=db.documents||[];
+ host.innerHTML=docs.length?docs.slice().reverse().map(d=>`<div class="doc-card"><strong>${esc(d.name||'Medical document')}</strong><span class="doc-kind">${esc(V622_DOC_LABELS[d.type]||d.type||'Other')}</span><small>${esc(d.date||'')} • ${esc(d.summary||'ไม่มีสรุป')}</small></div>`).join(''):'<p class="muted">ยังไม่มีเอกสารทางการแพทย์ที่บันทึก</p>';
+}
+async function v622ProcessFiles(files){
+ const arr=[...files]; if(!arr.length)return;
+ docImportState.file=arr[0];docImportState.files=arr;docImportState.rows=[];docImportState.docs=[];docImportState.text='';
+ if(id('ocrResultArea'))id('ocrResultArea').style.display='none';
+ if(id('labDocPreview'))id('labDocPreview').innerHTML=`<div class="pdf-preview"><strong>กำลังอ่าน ${arr.length} ไฟล์</strong><div class="import-file-queue">${arr.map(f=>`<small>• ${esc(f.name)}</small>`).join('')}</div></div>`;
+ try{
+   for(let i=0;i<arr.length;i++){
+     const file=arr[i];setOcrProgress(`กำลังอ่านไฟล์ ${i+1}/${arr.length}: ${file.name}`,Math.round(i/arr.length*90));let text='',rotation=0,confidence=null;
+     if(file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf'))text=await extractPdf(file);
+     else if(file.type.startsWith('image/')){const r=await v622OcrImage(file);text=r.text;rotation=r.rotation;confidence=r.confidence}
+     else continue;
+     text=normalizeOcrText(text);const type=v622Classify(text),summary=v622Summary(type,text),date=v622ParseDate(text);
+     docImportState.docs.push({name:file.name,type,summary,date,text,rotation,confidence});docImportState.text+=(docImportState.text?'\n\n':'')+`===== ${file.name} =====\n${text}`;
+     if(type==='lab')docImportState.rows.push(...detectLabRowsFromText(text));
+   }
+   // dedupe detected lab rows across multiple pages/files
+   const seen=new Set();docImportState.rows=docImportState.rows.filter(r=>{const k=cleanName(r.name)+'|'+r.value+'|'+r.date;if(seen.has(k))return false;seen.add(k);return true});
+   if(id('ocrRawText'))id('ocrRawText').value=docImportState.text;if(id('ocrResultArea'))id('ocrResultArea').style.display='block';
+   setOcrProgress('อ่านและจำแนกเอกสารเสร็จแล้ว',100);v622RenderDocumentMeta();renderDetectedRows();
+   if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').disabled=!(docImportState.rows.some(r=>r.selected)||docImportState.docs.length);
+ }catch(err){console.error(err);setOcrProgress('อ่านเอกสารไม่สำเร็จ',0);if(id('ocrResultArea'))id('ocrResultArea').style.display='block';alert('อ่านเอกสารไม่สำเร็จ: '+(err?.message||err))}
+}
+function v622Reset(){
+ const w=docImportState.worker;docImportState={file:null,files:[],text:'',rows:[],docs:[],worker:w};window.docImportState=docImportState;
+ if(id('labDocFile'))id('labDocFile').value='';if(id('labDocPreview'))id('labDocPreview').innerHTML='<div class="muted">ยังไม่ได้เลือกไฟล์</div>';if(id('ocrProgressWrap'))id('ocrProgressWrap').style.display='none';if(id('ocrResultArea'))id('ocrResultArea').style.display='none';if(id('ocrRawText'))id('ocrRawText').value='';if(id('docStructuredSummary'))id('docStructuredSummary').value='';renderDetectedRows();
+}
+
+if(id('labDocFile'))id('labDocFile').onchange=e=>v622ProcessFiles(e.target.files||[]);
+if(id('detectLabsBtn'))id('detectLabsBtn').onclick=()=>{docImportState.text=id('ocrRawText').value;docImportState.rows=detectLabRowsFromText(docImportState.text);const type=v622Classify(docImportState.text);if(docImportState.docs?.length===1){docImportState.docs[0].type=type;docImportState.docs[0].summary=v622Summary(type,docImportState.text)}v622RenderDocumentMeta();renderDetectedRows();if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').disabled=!(docImportState.rows.some(r=>r.selected)||docImportState.docs?.length)};
+if(id('docTypeSelect'))id('docTypeSelect').onchange=e=>{if(docImportState.docs?.length===1){docImportState.docs[0].type=e.target.value;docImportState.docs[0].summary=v622Summary(e.target.value,id('ocrRawText')?.value||'');v622RenderDocumentMeta()}};
+if(id('docStructuredSummary'))id('docStructuredSummary').oninput=e=>{if(docImportState.docs?.length===1)docImportState.docs[0].summary=e.target.value};
+if(id('clearOcrBtn'))id('clearOcrBtn').onclick=v622Reset;
+if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').onclick=()=>{
+ const chosen=(docImportState.rows||[]).filter(r=>r.selected&&String(r.name).trim()&&String(r.value).trim());const docs=docImportState.docs||[];if(!chosen.length&&!docs.length)return alert('ยังไม่มีข้อมูลที่พร้อมบันทึก');
+ let added=0;for(const r of chosen){db.labs.push({id:Date.now()+added,name:String(r.name).trim(),value:String(r.value).trim(),unit:String(r.unit||'').trim(),date:r.date||new Date().toISOString().slice(0,10),range:r.range||'',refLow:r.refLow??null,refHigh:r.refHigh??null,refMode:r.refMode||'none',category:r.category||'auto',source:'document-import-v6.2.2',sourceFile:docImportState.file?.name||''});added++}
+ for(let i=0;i<docs.length;i++){const d=docs[i];db.documents.push({id:Date.now()+1000+i,name:d.name,type:d.type,date:d.date,summary:d.summary||'',source:'document-import-v6.2.2',ocrRotation:d.rotation||0,ocrConfidence:d.confidence??null})}
+ save();renderAnalysis();v622RenderMedicalDocuments();alert(`บันทึกสำเร็จ: ผลตรวจ ${added} รายการ • เอกสาร ${docs.length} ไฟล์`);v622Reset();
+};
+const __renderAllV622=renderAll;renderAll=function(){__renderAllV622();v622RenderMedicalDocuments()};
+window.docImportState=docImportState;window.renderDetectedRows=renderDetectedRows;renderAll();
