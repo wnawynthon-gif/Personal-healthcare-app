@@ -12,7 +12,7 @@
 <div class="app">
   <header class="topbar">
     <div>
-      <div class="eyebrow">PERSONAL HEALTHCARE • V6</div>
+      <div class="eyebrow">PERSONAL HEALTHCARE • V6.1</div>
       <h1>สุขภาพของฉัน</h1>
       <p id="todayText"></p>
     </div>
@@ -150,6 +150,14 @@
           <label class="full">ช่วงอ้างอิง/หมายเหตุจากใบแล็บ<input type="text" id="labRange" placeholder="เช่น 3.5–5.5 หรือ &lt;5.0; แอปจะให้ความสำคัญกับช่วงจากแล็บนี้"></label>
           <button class="primary full" type="submit">เพิ่มและวิเคราะห์ผลตรวจ</button>
         </form>
+      </div>
+      <div class="card lab-import-card">
+        <div class="section-title"><div><span class="badge ok">NEW V6.1</span><h3>นำเข้าผลตรวจหลายรายการ</h3></div><span class="muted">CSV → Preview → Confirm</span></div>
+        <p class="muted">เลือกไฟล์ CSV แล้วตรวจรายการก่อนบันทึก ระบบจะยังไม่เพิ่มข้อมูลจนกด “ยืนยันนำเข้า”</p>
+        <div class="import-actions"><label class="file-btn">เลือก Lab CSV<input type="file" id="labCsvFileV61" accept=".csv,text/csv"></label><button class="secondary" type="button" id="clearLabPreviewBtn" disabled>ล้าง Preview</button></div>
+        <div id="labImportStatus" class="tip">รองรับคอลัมน์ name, value, date และคอลัมน์เสริม unit, ref_low, ref_high, ref_mode, range, category</div>
+        <div id="labImportPreview"></div>
+        <button class="primary full" type="button" id="confirmLabImportBtn" style="display:none">ยืนยันนำเข้า</button>
       </div>
       <div class="card"><h3>ประวัติผลตรวจ</h3><div id="labList" class="list"></div></div>
     </section>
