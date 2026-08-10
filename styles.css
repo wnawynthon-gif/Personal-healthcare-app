@@ -49,3 +49,8 @@
 
 /* v6.9 build visibility */
 .build-strip{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 14px;margin:0 0 10px;background:#ecfdf5;border:1px solid #99f6e4;border-radius:12px;color:#134e4a;font-size:13px}.build-strip .mini{padding:6px 10px;font-size:12px}.build-ok{color:#047857;font-weight:700}.build-warn{color:#b45309;font-weight:700}
+
+/* v7.0 OCR cell proof */
+.ocr-cell-proof{grid-column:2/-1;display:flex;align-items:center;gap:12px;padding:8px 10px;border:1px solid #d7e3df;border-radius:12px;background:#f8fbfa;color:#47615a;font-size:.82rem}
+.ocr-cell-proof img{height:54px;max-width:260px;object-fit:contain;background:white;border:1px solid #d8dedc;border-radius:8px;padding:2px;image-rendering:auto}
+@media(max-width:760px){.ocr-cell-proof{grid-column:1/-1}.ocr-cell-proof img{max-width:65%;height:48px}}

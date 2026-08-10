@@ -1,3 +1,14 @@
+# Personal Healthcare App v7.0
+
+**Build ID:** `7.0.0-20260810`  
+**OCR engine:** V7.0 Geometry-Calibrated Multi-pass
+
+## New in v7.0
+- Corrected Result-row geometry using the supplied Golden Jubilee/Mahidol source report.
+- Result OCR crop no longer overlaps Reference/Interpretation columns.
+- Preview shows the original Result-cell image beside each extracted value.
+- Suspicious or conflicting OCR stays review-only and is never auto-selected.
+
 # Personal Healthcare App v6.9
 
 **Build ID:** `6.9.0-20260810`  
@@ -55,5 +66,3 @@ Only confirmed extracted lab records become part of the health database and can 
 ## Deploy
 Upload all v6.2 files to the existing GitHub Pages repository root and replace the older v6/v6.1 files.
 No new Supabase project or table is required.
-
-Deployment trigger: v6.9
