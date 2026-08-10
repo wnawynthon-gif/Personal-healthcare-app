@@ -1,6 +1,6 @@
-# Personal Healthcare App v6.5
+# Personal Healthcare App v6.8
 
-## New in v6.5
+## New in v6.8
 
 ### Smart Lab Importer v6.5
 - Multi-pass OCR for photographed/HEIC laboratory reports, including a high-contrast numeric pass.

@@ -1008,70 +1008,81 @@ async function v622OcrImage(file){
 }
 
 
-// ---------- v6.7 Row-Anchored Template OCR ----------
-// For the Golden Jubilee / Mahidol one-page Health Report used in testing,
-// OCR each RESULT cell independently. This prevents reference values and
-// neighbouring rows from being mistaken for patient results.
-const V67_TEMPLATE_ROWS=[
- ['FBS',0.322],['BUN',0.340],['Creatinine',0.358],['eGFR',0.374],
- ['Uric acid',0.390],['Cholesterol',0.406],['Triglyceride',0.422],
- ['HDL-C',0.438],['LDL-C',0.454],['SGOT (AST)',0.470],['SGPT (ALT)',0.486],
- ['Alk-phos',0.503],['Hb',0.538],['Hct',0.554],['WBC',0.570],['Platelet',0.587],
- ['HbA1c',0.744]
+// ---------- v6.8 Calibrated Multi-pass Template OCR ----------
+// Calibrated against the supplied Golden Jubilee / Mahidol Health Report photo.
+// Each RESULT cell is read three times with slightly different crop bounds.
+// A value is accepted only when at least two passes agree; otherwise it stays review-only.
+const V68_TEMPLATE_ROWS=[
+ ['FBS',0.3542],['BUN',0.3743],['Creatinine',0.3932],['eGFR',0.4141],
+ ['Uric acid',0.4342],['Cholesterol',0.4557],['Triglyceride',0.4766],
+ ['HDL-C',0.4980],['LDL-C',0.5189],['SGOT (AST)',0.5397],['SGPT (ALT)',0.5599],
+ ['Alk-phos',0.5807],['Hb',0.6465],['Hct',0.6673],['WBC',0.6882],['Platelet',0.7090],
+ ['HbA1c',0.8160],['PSA',0.8370]
 ];
-function v67TemplateLikely(text,canvas){
+function v68TemplateLikely(text,canvas){
  const t=String(text||'').toLowerCase();
- const portrait=canvas ? canvas.height>canvas.width*1.15 : true;
- return portrait && (/(health\s*report|check\s*up\s*center|golden\s*jubilee|mahidol|690020840)/i.test(t) || /\bFBS\b/i.test(text||''));
+ return !!canvas && canvas.height>canvas.width*1.15 && (/(health\s*report|check\s*up\s*center|golden\s*jubilee|mahidol|690020840)/i.test(t)||/\bfbs\b/i.test(t));
 }
-function v67CropCanvas(src,x0,y0,x1,y1){
+function v68CropCanvas(src,x0,y0,x1,y1,variant='contrast'){
  const sx=Math.max(0,Math.floor(src.width*x0)), sy=Math.max(0,Math.floor(src.height*y0));
  const sw=Math.max(2,Math.floor(src.width*(x1-x0))), sh=Math.max(2,Math.floor(src.height*(y1-y0)));
- const scale=4,c=document.createElement('canvas');c.width=sw*scale;c.height=sh*scale;
+ const scale=5,c=document.createElement('canvas');c.width=sw*scale;c.height=sh*scale;
  const ctx=c.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=true;ctx.drawImage(src,sx,sy,sw,sh,0,0,c.width,c.height);
  const im=ctx.getImageData(0,0,c.width,c.height),d=im.data;
- for(let i=0;i<d.length;i+=4){let y=.299*d[i]+.587*d[i+1]+.114*d[i+2]; y=y>205?255:(y<85?0:Math.max(0,Math.min(255,(y-145)*1.8+145))); d[i]=d[i+1]=d[i+2]=y;}
+ for(let i=0;i<d.length;i+=4){let y=.299*d[i]+.587*d[i+1]+.114*d[i+2];
+   if(variant==='binary')y=y>170?255:0; else if(variant==='soft')y=Math.max(0,Math.min(255,(y-128)*1.35+128)); else y=y>210?255:(y<75?0:Math.max(0,Math.min(255,(y-142)*1.95+142)));
+   d[i]=d[i+1]=d[i+2]=y;
+ }
  ctx.putImageData(im,0,0);return c;
 }
-function v67PickValue(spec,txt){
- const vals=v65NumericCandidates(String(txt||'').replace(/\s+/g,' ')).filter(c=>c.v>=spec.min&&c.v<=spec.max&&!v65IsRefValue(spec,c.v));
- if(!vals.length)return null;
- // Prefer a decimal when the analyte normally has one, otherwise the first clean token.
- vals.sort((a,b)=>{
-   const ad=spec.shape==='decimal'&&/[.,]/.test(a.raw)?1:0, bd=spec.shape==='decimal'&&/[.,]/.test(b.raw)?1:0;
-   return bd-ad || a.i-b.i;
- });
- return vals[0];
+function v68NormalizeNumericToken(txt){
+ let t=String(txt||'').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/,/g,'.').replace(/\s+/g,'');
+ const m=t.match(/\d+(?:\.\d+)?/); return m?m[0]:'';
 }
-async function v67ExtractTemplateRows(file,rotation,baseText){
- const base=await v622CanvasFromFile(file,rotation||0,'contrast');
- if(!v67TemplateLikely(baseText,base))return [];
+function v68Pick(spec,txt){
+ const tok=v68NormalizeNumericToken(txt); if(!tok)return null;
+ const v=+tok; if(!Number.isFinite(v)||v<spec.min||v>spec.max||v65IsRefValue(spec,v))return null;
+ return {v,raw:tok};
+}
+async function v68ExtractTemplateRows(file,rotation,baseText){
+ const base=await v622CanvasFromFile(file,rotation||0,'soft');
+ if(!v68TemplateLikely(baseText,base))return [];
  const worker=await getOcrWorker(),rows=[];
  try{await worker.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789.,',preserve_interword_spaces:'0'});}catch(e){}
- for(let i=0;i<V67_TEMPLATE_ROWS.length;i++){
-   const [name,y]=V67_TEMPLATE_ROWS[i],spec=V65_LABS.find(x=>x.name===name);if(!spec)continue;
-   setOcrProgress(`V6.7 อ่านช่องผลตรวจ ${i+1}/${V67_TEMPLATE_ROWS.length}: ${name}`,74+Math.round(22*(i+1)/V67_TEMPLATE_ROWS.length));
-   // Result column only. Narrow X bounds deliberately exclude the reference column.
-   const crop=v67CropCanvas(base,0.245,y-0.0105,0.315,y+0.0105);
-   let r;try{r=await worker.recognize(crop)}catch(e){continue}
-   const raw=(r.data?.text||'').trim(),pick=v67PickValue(spec,raw);if(!pick)continue;
-   const ref=v65ReferenceMeta(spec);
-   rows.push({selected:false,name:spec.name,value:String(pick.v),unit:spec.unit,date:v622ParseDate(baseText),range:ref.range,refLow:spec.low,refHigh:spec.high,refMode:ref.mode,category:spec.cat,confidence:'high',reviewRequired:true,qualityReason:'V6.7 อ่านจากช่อง Result ของแถวโดยตรง • กรุณาเทียบกับใบจริงก่อนบันทึก',ocrCellText:raw,sourceMode:'row-anchor'});
+ const passes=[
+   {x0:.238,x1:.374,dy:.0000,variant:'contrast'},
+   {x0:.248,x1:.365,dy:-.0010,variant:'binary'},
+   {x0:.232,x1:.382,dy:.0010,variant:'soft'}
+ ];
+ for(let i=0;i<V68_TEMPLATE_ROWS.length;i++){
+   const [name,y]=V68_TEMPLATE_ROWS[i],spec=V65_LABS.find(x=>x.name===name);if(!spec)continue;
+   setOcrProgress(`V6.8 อ่านและยืนยันช่อง Result ${i+1}/${V68_TEMPLATE_ROWS.length}: ${name}`,74+Math.round(22*(i+1)/V68_TEMPLATE_ROWS.length));
+   const seen=[];
+   for(const ps of passes){
+     const crop=v68CropCanvas(base,ps.x0,y-0.0095+ps.dy,ps.x1,y+0.0095+ps.dy,ps.variant);
+     try{const r=await worker.recognize(crop), raw=(r.data?.text||'').trim(), pick=v68Pick(spec,raw);seen.push({raw,pick,confidence:r.data?.confidence||0});}catch(e){seen.push({raw:'',pick:null,confidence:0});}
+   }
+   const counts=new Map(); for(const a of seen)if(a.pick){const k=String(a.pick.v);counts.set(k,(counts.get(k)||0)+1)}
+   const ranked=[...counts.entries()].sort((a,b)=>b[1]-a[1]); const winner=ranked[0];
+   if(!winner)continue;
+   const consensus=winner[1]>=2, value=winner[0],ref=v65ReferenceMeta(spec);
+   rows.push({selected:false,name:spec.name,value,unit:spec.unit,date:v622ParseDate(baseText),range:ref.range,refLow:spec.low,refHigh:spec.high,refMode:ref.mode,category:spec.cat,
+     confidence:consensus?'high':'low',reviewRequired:true,
+     qualityReason:consensus?'V6.8: OCR 2/3 รอบขึ้นไปอ่านตรงกัน • ยังต้องเทียบใบจริงก่อนบันทึก':'V6.8: OCR หลายรอบอ่านไม่ตรงกัน • ห้ามบันทึกจนกว่าจะตรวจแก้',
+     ocrCellText:seen.map((a,j)=>`P${j+1}:${a.raw||'∅'}`).join(' | '),sourceMode:'v6.8-consensus',ocrConsensus:consensus});
  }
  try{await worker.setParameters({tessedit_pageseg_mode:'6',tessedit_char_whitelist:'',preserve_interword_spaces:'1'});}catch(e){}
  return rows;
 }
-function v67MergeRows(textRows,templateRows){
- const by=new Map();
- for(const r of textRows||[])by.set(r.name,r);
+function v68MergeRows(textRows,templateRows){
+ const by=new Map(); for(const r of textRows||[])by.set(r.name,r);
  for(const r of templateRows||[]){
    const old=by.get(r.name);
-   // Row-anchored result wins when plausible. It is physically isolated from reference cells.
-   if(v63PlausibleRow(r))by.set(r.name,r); else if(!old)by.set(r.name,r);
+   // Template result only replaces text OCR when 2/3 crop passes agree.
+   if(r.ocrConsensus&&v63PlausibleRow(r))by.set(r.name,r); else if(!old)by.set(r.name,r);
  }
  return [...by.values()];
 }
-
 function v622RenderDocumentMeta(){
  const docs=docImportState.docs||[]; const badge=id('docTypeBadge'),sel=id('docTypeSelect'),sum=id('docStructuredSummary');
  if(!docs.length){if(badge)badge.textContent='ยังไม่พบ';return}
@@ -1098,14 +1109,14 @@ async function v622ProcessFiles(files){
      if(type==='lab'){
        const textRows=detectLabRowsFromText(text);
        let templateRows=[];
-       if(file.type.startsWith('image/')){try{templateRows=await v67ExtractTemplateRows(file,rotation,text)}catch(e){console.warn('V6.7 row OCR fallback',e)}}
-       docImportState.rows.push(...v67MergeRows(textRows,templateRows));
+       if(file.type.startsWith('image/')){try{templateRows=await v68ExtractTemplateRows(file,rotation,text)}catch(e){console.warn('V6.8 calibrated OCR fallback',e)}}
+       docImportState.rows.push(...v68MergeRows(textRows,templateRows));
      }
    }
    // dedupe detected lab rows across multiple pages/files
    const seen=new Set();docImportState.rows=docImportState.rows.filter(r=>{const k=cleanName(r.name)+'|'+r.value+'|'+r.date;if(seen.has(k))return false;seen.add(k);return true});
    if(id('ocrRawText'))id('ocrRawText').value=docImportState.text;if(id('ocrResultArea'))id('ocrResultArea').style.display='block';
-   setOcrProgress('อ่านเอกสารเสร็จแล้ว — V6.7 Row-Anchored Lab Importer: อ่านช่อง Result แยกจาก Reference และไม่เลือกผลอัตโนมัติ',100);v622RenderDocumentMeta();renderDetectedRows();
+   setOcrProgress('อ่านเอกสารเสร็จแล้ว — V6.8 Calibrated Multi-pass Lab Importer: อ่าน Result 3 รอบและใช้เฉพาะค่าที่ตรงกัน 2/3 รอบ',100);v622RenderDocumentMeta();renderDetectedRows();
    if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').disabled=!(docImportState.rows.some(r=>r.selected)||docImportState.docs.length);
  }catch(err){console.error(err);setOcrProgress('อ่านเอกสารไม่สำเร็จ',0);if(id('ocrResultArea'))id('ocrResultArea').style.display='block';alert('อ่านเอกสารไม่สำเร็จ: '+(err?.message||err))}
 }
@@ -1121,8 +1132,8 @@ if(id('docStructuredSummary'))id('docStructuredSummary').oninput=e=>{if(docImpor
 if(id('clearOcrBtn'))id('clearOcrBtn').onclick=v622Reset;
 if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').onclick=()=>{
  const chosen=(docImportState.rows||[]).filter(r=>r.selected&&String(r.name).trim()&&String(r.value).trim()&&v63PlausibleRow(r));const docs=docImportState.docs||[];if(!chosen.length&&!docs.length)return alert('ยังไม่มีข้อมูลที่พร้อมบันทึก');
- let added=0;for(const r of chosen){const row={id:Date.now()+added,name:String(r.name).trim(),value:String(r.value).trim(),unit:String(r.unit||'').trim(),date:r.date||new Date().toISOString().slice(0,10),range:r.range||'',refLow:r.refLow??null,refHigh:r.refHigh??null,refMode:r.refMode||'none',category:r.category||'auto',source:'document-import-v6.7',sourceFile:docImportState.file?.name||'',importStatus:'confirmed'};const dup=db.labs.some(x=>x.importStatus!=='rejected'&&cleanName(x.name)===cleanName(row.name)&&String(x.value)===String(row.value)&&String(x.date)===String(row.date));if(!dup){db.labs.push(row);added++;}}
- for(let i=0;i<docs.length;i++){const d=docs[i];db.documents.push({id:Date.now()+1000+i,name:d.name,type:d.type,date:d.date,summary:d.summary||'',source:'document-import-v6.7',ocrRotation:d.rotation||0,ocrConfidence:d.confidence??null})}
+ let added=0;for(const r of chosen){const row={id:Date.now()+added,name:String(r.name).trim(),value:String(r.value).trim(),unit:String(r.unit||'').trim(),date:r.date||new Date().toISOString().slice(0,10),range:r.range||'',refLow:r.refLow??null,refHigh:r.refHigh??null,refMode:r.refMode||'none',category:r.category||'auto',source:'document-import-v6.8',sourceFile:docImportState.file?.name||'',importStatus:'confirmed'};const dup=db.labs.some(x=>x.importStatus!=='rejected'&&cleanName(x.name)===cleanName(row.name)&&String(x.value)===String(row.value)&&String(x.date)===String(row.date));if(!dup){db.labs.push(row);added++;}}
+ for(let i=0;i<docs.length;i++){const d=docs[i];db.documents.push({id:Date.now()+1000+i,name:d.name,type:d.type,date:d.date,summary:d.summary||'',source:'document-import-v6.8',ocrRotation:d.rotation||0,ocrConfidence:d.confidence??null})}
  save();renderAnalysis();v622RenderMedicalDocuments();alert(`บันทึกสำเร็จ: ผลตรวจ ${added} รายการ • เอกสาร ${docs.length} ไฟล์`);v622Reset();
 };
 const __renderAllV622=renderAll;renderAll=function(){__renderAllV622();v622RenderMedicalDocuments()};
