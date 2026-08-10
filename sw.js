@@ -1,14 +1,15 @@
-const CACHE='personal-health-v65-1';
-const ASSETS=['./','./index.html','./styles.css','./app.js','./manifest.json'];
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
-self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+const BUILD='6.9.0-20260810';
+const CACHE='personal-health-'+BUILD;
+const CORE=['./','./index.html','./styles.css?v=6.9.0','./app.js?v=6.9.0-20260810','./manifest.json?v=6.9.0','./build.json'];
+self.addEventListener('install',e=>e.waitUntil((async()=>{const c=await caches.open(CACHE);for(const a of CORE){try{await c.add(a)}catch{}}await self.skipWaiting()})()));
+self.addEventListener('activate',e=>e.waitUntil((async()=>{for(const k of await caches.keys())if(k!==CACHE)await caches.delete(k);await self.clients.claim()})()));
+self.addEventListener('message',e=>{if(e.data==='SKIP_WAITING')self.skipWaiting()});
 self.addEventListener('fetch',e=>{
  if(e.request.method!=='GET')return;
  const u=new URL(e.request.url);
- // Network-first for our app files so GitHub Pages updates are visible on iPad/Safari.
- if(u.origin===self.location.origin){
-   e.respondWith(fetch(e.request).then(resp=>{const copy=resp.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return resp;}).catch(()=>caches.match(e.request).then(r=>r||caches.match('./index.html'))));
-   return;
- }
+ if(u.origin!==self.location.origin)return;
+ // HTML/JS/CSS/manifest/build are always network-first and browser-cache bypassed.
+ const core=/\.(?:html|js|css|json)$/.test(u.pathname)||u.pathname.endsWith('/');
+ if(core){e.respondWith((async()=>{try{const req=new Request(e.request,{cache:'no-store'});const r=await fetch(req);if(r.ok){const c=await caches.open(CACHE);c.put(e.request,r.clone())}return r}catch{ return (await caches.match(e.request))||(await caches.match('./index.html'))}})());return}
  e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));
 });

@@ -1,6 +1,16 @@
-# Personal Healthcare App v6.8
+# Personal Healthcare App v6.9
 
-## New in v6.8
+**Build ID:** `6.9.0-20260810`  
+**OCR engine:** V6.8 Calibrated Multi-pass
+
+## New in v6.9
+- Deployment/cache guard for GitHub Pages and Safari/iPad.
+- Visible runtime Build ID and stale-build detector.
+- One-click cache clear + reload.
+
+# Personal Healthcare App v6.9
+
+## New in v6.9
 
 ### Smart Lab Importer v6.5
 - Multi-pass OCR for photographed/HEIC laboratory reports, including a high-contrast numeric pass.
