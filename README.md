@@ -1,6 +1,6 @@
-# Personal Healthcare App v6.2.2
+# Personal Healthcare App v6.3
 
-## New in v6.2.2
+## New in v6.3
 - Multi-file image/PDF import
 - Auto document classification: lab/health check, chest X-ray, ultrasound, ECG, other
 - Image preprocessing and automatic 90°/270° OCR retry when confidence is poor

@@ -584,7 +584,7 @@ function testKey(l){return cleanName(l.name)+'|'+unitNorm(l.unit)}
 function historyFor(l){return db.labs.filter(x=>testKey(x)===testKey(l)).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)))}
 function trendFor(l){const h=historyFor(l).filter(x=>numericValue(x.value)!=null);if(h.length<2)return{direction:'insufficient',delta:null,count:h.length};const a=numericValue(h[h.length-2].value),b=numericValue(h[h.length-1].value),delta=b-a,tol=Math.max(Math.abs(a)*0.02,0.001);return{direction:Math.abs(delta)<=tol?'stable':delta>0?'up':'down',delta,count:h.length}}
 function analyseLab(lab){const value=numericValue(lab.value),ref=structuredRef(lab),refState=compareRef(value,ref),rule=evidenceRule(lab,value),trend=trendFor(lab);let state=refState||rule?.state||'unknown',severity='info',label='',note='';if(refState){severity=refState==='normal'?'ok':'warn';label=refState==='normal'?'อยู่ในช่วงอ้างอิงของแล็บ':refState==='high'?'สูงกว่าช่วงอ้างอิงของแล็บ':'ต่ำกว่าช่วงอ้างอิงของแล็บ';note='ใช้ช่วงอ้างอิงที่บันทึกจากใบแล็บเป็นหลัก'}else if(rule){severity=rule.severity;label=rule.label;note=rule.note}else{label=value==null?'ค่าไม่ใช่ตัวเลขสำหรับวิเคราะห์อัตโนมัติ':'ยังไม่มีช่วงอ้างอิงที่ใช้เปรียบเทียบ';note='เพิ่ม reference range จากใบแล็บเพื่อให้วิเคราะห์ได้แม่นยำขึ้น'}return{lab,value,ref,state,severity,label,note,rule,trend,category:lab.category&&lab.category!=='auto'?lab.category:inferCategory(lab.name)}}
-function latestByTest(){const map=new Map();db.labs.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(l=>map.set(testKey(l),l));return[...map.values()].map(analyseLab)}
+function latestByTest(){const map=new Map();db.labs.filter(l=>l.importStatus!=='needs-review').slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(l=>map.set(testKey(l),l));return[...map.values()].map(analyseLab)}
 function bpAnalysis(){const bp7=db.bp.filter(x=>withinDays(x.date,7));if(!bp7.length)return{state:'unknown',text:'ยังไม่มีความดันใน 7 วัน'};const s=mean(bp7.map(x=>x.sys)),d=mean(bp7.map(x=>x.dia));return s>=135||d>=85?{state:'warn',text:`ค่าเฉลี่ยความดันที่บ้าน 7 วัน ${s.toFixed(0)}/${d.toFixed(0)} mmHg สูงกว่า/เท่ากับเกณฑ์ 135/85 ที่ NHS ใช้พิจารณาว่าสูงเมื่อวัดที่บ้าน`}:{state:'ok',text:`ค่าเฉลี่ยความดันที่บ้าน 7 วัน ${s.toFixed(0)}/${d.toFixed(0)} mmHg ต่ำกว่า 135/85`}}
 function analysisPriorities(){const out=[],labs=latestByTest();labs.filter(x=>x.state==='high'||x.state==='low').forEach(x=>out.push({level:x.severity==='critical'?'critical':'warn',text:`${x.lab.name}: ${x.lab.value} ${x.lab.unit||''} — ${x.label}`,date:x.lab.date}));const bp=bpAnalysis();if(bp.state==='warn')out.push({level:'warn',text:bp.text,date:new Date().toISOString()});if(!out.length)out.push({level:'ok',text:'ยังไม่พบค่าล่าสุดที่ถูก flag จากข้อมูลและช่วงอ้างอิงที่บันทึกไว้',date:new Date().toISOString()});return out}
 function refText(a){const r=a.ref;if(!r)return a.lab.range||'ไม่ได้บันทึก';if(r.mode==='range')return`${r.low??'–'} – ${r.high??'–'}`;if(r.mode==='max')return`≤ ${r.high}`;if(r.mode==='min')return`≥ ${r.low}`;return a.lab.range||'—'}
@@ -807,6 +807,13 @@ window.db=db;
 
 // ---------- v6.2.2 Robust Medical Document Import ----------
 db.documents=db.documents||[];
+// v6.3 migration: legacy v6.2.2 OCR rows were auto-saved too aggressively.
+// Keep them for audit/history, but exclude them from automatic health analysis until re-imported/confirmed.
+if(!db._v63LegacyQuarantine){
+  db.labs=(db.labs||[]).map(l=>l?.source==='document-import-v6.2.2'?{...l,importStatus:'needs-review'}:l);
+  db._v63LegacyQuarantine=true;
+  try{localStorage.setItem(KEY,JSON.stringify(db))}catch{}
+}
 const V622_DOC_LABELS={lab:'Lab / Health Check',xray:'Chest X-ray',ultrasound:'Ultrasound',ecg:'ECG',other:'Medical document'};
 
 function v622ParseDate(text){
@@ -854,69 +861,67 @@ function v622Summary(type,text){
  return raw.slice(0,1500);
 }
 
-const V622_LABS=[
- ['HbA1c',/(?:HbA1c|HBA1C)/i,'%',null,null,'glucose'],
- ['FBS',/(?:\bFBS\b|Fasting\s*(?:Blood\s*)?(?:Sugar|Glucose)|น้ำตาลในเลือด)/i,'mg/dL',70,99,'glucose'],
- ['BUN',/\bBUN\b/i,'mg/dL',6,20,'kidney'],
- ['Creatinine',/(?:\bCreatinine\b|\bCr\b)/i,'mg/dL',0.67,1.17,'kidney'],
- ['eGFR',/\beGFR\b/i,'mL/min/1.73m2',90,null,'kidney'],
- ['Uric acid',/(?:Uric\s*acid|กรดยูริก)/i,'mg/dL',3.4,7,'other'],
- ['Cholesterol',/(?:Total\s*Cholesterol|\bCholesterol\b)/i,'mg/dL',null,200,'lipid'],
- ['Triglyceride',/(?:Triglyceride|Triglycerides|\bTG\b)/i,'mg/dL',null,150,'lipid'],
- ['HDL-C',/(?:HDL[- ]?C|\bHDL\b)/i,'mg/dL',55,null,'lipid'],
- ['LDL-C',/(?:LDL[- ]?C|\bLDL\b)/i,'mg/dL',null,100,'lipid'],
- ['SGOT (AST)',/(?:SGOT|\bAST\b)/i,'U/L',null,41,'liver'],
- ['SGPT (ALT)',/(?:SGPT|\bALT\b)/i,'U/L',null,42,'liver'],
- ['Alk-phos',/(?:Alk[- ]?phos|Alkaline\s*Phosphatase|\bALP\b)/i,'U/L',40,130,'liver'],
- ['Hb',/(?:\bHb\b|Hemoglobin|Haemoglobin)/i,'g/dL',12.7,16.9,'blood'],
- ['Hct',/(?:\bHct\b|Hematocrit|Haematocrit)/i,'%',40.3,51.9,'blood'],
- ['WBC',/\bWBC\b/i,'10^9/L',4.5,11.3,'blood'],
- ['Platelet',/(?:Platelet|PLT)/i,'10^9/L',160,356,'blood'],
- ['PSA',/\bPSA\b/i,'ng/mL',null,null,'other']
+const V63_LABS=[
+ {name:'HbA1c',rx:/(?:HbA1c|HBA1C)/i,unit:'%',low:null,high:null,cat:'glucose',min:2,max:20},
+ {name:'FBS',rx:/(?:\bFBS\b|Fasting\s*(?:Blood\s*)?(?:Sugar|Glucose)|น้ำตาลในเลือด)/i,unit:'mg/dL',low:70,high:99,cat:'glucose',min:30,max:700},
+ {name:'BUN',rx:/\bBUN\b/i,unit:'mg/dL',low:6,high:20,cat:'kidney',min:1,max:250},
+ {name:'Creatinine',rx:/(?:\bCreatinine\b|\bCr\b)/i,unit:'mg/dL',low:.67,high:1.17,cat:'kidney',min:.1,max:25},
+ {name:'eGFR',rx:/\beGFR\b/i,unit:'mL/min/1.73m2',low:90,high:null,cat:'kidney',min:1,max:200},
+ {name:'Uric acid',rx:/(?:Uric\s*acid|กรดยูริก)/i,unit:'mg/dL',low:3.4,high:7,cat:'other',min:.5,max:30},
+ {name:'Cholesterol',rx:/(?:Total\s*Cholesterol|\bCholesterol\b)/i,unit:'mg/dL',low:null,high:200,cat:'lipid',min:50,max:800},
+ {name:'Triglyceride',rx:/(?:Triglyceride|Triglycerides|\bTG\b)/i,unit:'mg/dL',low:null,high:150,cat:'lipid',min:10,max:3000},
+ {name:'HDL-C',rx:/(?:HDL[- ]?C|\bHDL\b)/i,unit:'mg/dL',low:55,high:null,cat:'lipid',min:5,max:200},
+ {name:'LDL-C',rx:/(?:LDL[- ]?C|\bLDL\b)/i,unit:'mg/dL',low:null,high:100,cat:'lipid',min:5,max:600},
+ {name:'SGOT (AST)',rx:/(?:SGOT|\bAST\b)/i,unit:'U/L',low:null,high:41,cat:'liver',min:1,max:5000},
+ {name:'SGPT (ALT)',rx:/(?:SGPT|\bALT\b)/i,unit:'U/L',low:null,high:42,cat:'liver',min:1,max:5000},
+ {name:'Alk-phos',rx:/(?:Alk[- ]?phos|Alkaline\s*Phosphatase|\bALP\b)/i,unit:'U/L',low:40,high:130,cat:'liver',min:5,max:3000},
+ {name:'Hb',rx:/(?:\bHb\b|Hemoglobin|Haemoglobin)/i,unit:'g/dL',low:12.7,high:16.9,cat:'blood',min:2,max:25},
+ {name:'Hct',rx:/(?:\bHct\b|Hematocrit|Haematocrit)/i,unit:'%',low:40.3,high:51.9,cat:'blood',min:5,max:75},
+ {name:'WBC',rx:/\bWBC\b/i,unit:'10^9/L',low:4.5,high:11.3,cat:'blood',min:.1,max:100},
+ {name:'Platelet',rx:/(?:Platelet|PLT)/i,unit:'10^9/L',low:160,high:356,cat:'blood',min:5,max:1500},
+ {name:'PSA',rx:/\bPSA\b/i,unit:'ng/mL',low:null,high:null,cat:'other',min:0,max:500}
 ];
-function v622FindKnownLab(text,nameRx){
- const normalized=normalizeOcrText(text); const lines=normalized.split(/\n+/);
+const V63_CANONICAL=new Set(V63_LABS.map(x=>x.name.toLowerCase()));
+function v63NumericCandidates(tail){
+ return [...String(tail||'').replace(/[Oo](?=\d)/g,'0').matchAll(/-?\d+(?:\.\d+)?/g)]
+   .map(m=>({v:+m[0],raw:m[0],i:m.index||0}))
+   .filter(x=>Number.isFinite(x.v)&&!(x.v>=1900&&x.v<=2600));
+}
+function v63FindKnownLab(text,spec){
+ const normalized=normalizeOcrText(text), lines=normalized.split(/\n+/);
  for(const line of lines){
-   const m=line.match(nameRx); if(!m)continue;
-   const tail=line.slice((m.index||0)+m[0].length).replace(/[Oo](?=\d)/g,'0');
-   const nums=[...tail.matchAll(/-?\d+(?:\.\d+)?/g)].map(x=>({v:+x[0],i:x.index||0}));
-   if(nums.length){
-     // Ignore obvious years/IDs and prefer the first plausible result after the test name.
-     const n=nums.find(x=>Math.abs(x.v)<10000 && !(x.v>=1900&&x.v<=2600)); if(n)return String(n.v);
-   }
+   const m=line.match(spec.rx); if(!m)continue;
+   const tail=line.slice((m.index||0)+m[0].length, (m.index||0)+m[0].length+100);
+   const nums=v63NumericCandidates(tail).filter(x=>x.v>=spec.min&&x.v<=spec.max);
+   if(!nums.length)continue;
+   // In lab tables the patient result is normally the first plausible number after the test name.
+   // Reject values that are obviously reference-only when no preceding result is present.
+   const first=nums[0];
+   if(spec.low!=null && spec.high!=null && nums.length===1 && (Math.abs(first.v-spec.low)<1e-9 || Math.abs(first.v-spec.high)<1e-9))continue;
+   return {value:String(first.v),quality:'high',line};
  }
- // OCR sometimes flattens a row. Restrict the search window after the alias.
- const flat=normalized.replace(/\n/g,' '); const m=flat.match(nameRx); if(m){
-   const tail=flat.slice((m.index||0)+m[0].length,(m.index||0)+m[0].length+55);
-   const n=tail.match(/(?:^|[^\d])(-?\d+(?:\.\d+)?)/); if(n){const v=+n[1];if(!(v>=1900&&v<=2600))return String(v)}
- }
- return null;
+ const flat=normalized.replace(/\n/g,' '),m=flat.match(spec.rx); if(!m)return null;
+ const tail=flat.slice((m.index||0)+m[0].length,(m.index||0)+m[0].length+70);
+ const nums=v63NumericCandidates(tail).filter(x=>x.v>=spec.min&&x.v<=spec.max);
+ if(!nums.length)return null;
+ return {value:String(nums[0].v),quality:'medium',line:tail};
 }
 function detectLabRowsFromText(text){
- const rows=[],seen=new Set(),date=v622ParseDate(text);
- // High-confidence dictionary extraction first.
- for(const [name,rx,unit,low,high,cat] of V622_LABS){
-   const value=v622FindKnownLab(text,rx); if(value==null)continue;
-   let mode='none',range=''; if(low!=null&&high!=null){mode='range';range=`${low}-${high}`} else if(high!=null){mode='max';range=`<${high}`} else if(low!=null){mode='min';range=`>${low}`}
-   const key=name.toLowerCase();seen.add(key); rows.push({selected:true,name,value,unit,date,range,refLow:low,refHigh:high,refMode:mode,category:cat});
+ const rows=[],date=v622ParseDate(text);
+ // v6.3 SAFETY: only canonical medical fields are auto-created. Arbitrary OCR lines never become labs.
+ for(const spec of V63_LABS){
+   const hit=v63FindKnownLab(text,spec); if(!hit)continue;
+   let mode='none',range='';
+   if(spec.low!=null&&spec.high!=null){mode='range';range=`${spec.low}-${spec.high}`}
+   else if(spec.high!=null){mode='max';range=`<${spec.high}`}
+   else if(spec.low!=null){mode='min';range=`>${spec.low}`}
+   rows.push({selected:hit.quality==='high',name:spec.name,value:hit.value,unit:spec.unit,date,range,refLow:spec.low,refHigh:spec.high,refMode:mode,category:spec.cat,confidence:hit.quality,reviewRequired:hit.quality!=='high'});
  }
- // Generic line parser catches tests not in the dictionary, but avoids duplicate known tests.
- const lines=normalizeOcrText(text).split(/\n+/).map(x=>x.trim()).filter(Boolean);
- const refRange=/(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)/i;
- const valUnit=new RegExp('(-?\\d+(?:\\.\\d+)?)\\s*('+UNIT_RX+')?','i');
- for(const raw of lines){
-   const line=raw.replace(/\s{2,}/g,' ').trim(); if(line.length<3||line.length>180)continue;
-   const m=line.match(valUnit); if(!m)continue; const value=m[1],unit=m[2]||'';
-   const before=line.slice(0,m.index).replace(/[:;•]+$/,'').trim(); if(before.length<2)continue;
-   if(/^(page|date|dob|age|sex|time|patient|reference|range|result|hn|request|report|print)$/i.test(before)||/^\d/.test(before))continue;
-   if(/blood pressure|weight|height|bmi|pulse|entry date|request date|report date|x ray|x-ray|age/i.test(before))continue;
-   const name=before.replace(/^[^\p{L}]+/gu,'').trim(); if(!name||name.length>55)continue;
-   const nk=cleanName(name); if([...seen].some(k=>nk.includes(k)||k.includes(nk)))continue;
-   let low=null,high=null,mode='none',range='';const after=line.slice((m.index||0)+m[0].length);const rr=after.match(refRange);
-   if(rr){low=+rr[1];high=+rr[2];mode='range';range=`${rr[1]}-${rr[2]}`}else{const mx=after.match(/[<≤]\s*(-?\d+(?:\.\d+)?)/),mn=after.match(/[>≥]\s*(-?\d+(?:\.\d+)?)/);if(mx){high=+mx[1];mode='max';range=`<${mx[1]}`}else if(mn){low=+mn[1];mode='min';range=`>${mn[1]}`}}
-   rows.push({selected:true,name,value,unit,date,range,refLow:low,refHigh:high,refMode:mode,category:'auto'});
- }
- return rows.slice(0,80);
+ return rows;
+}
+function v63PlausibleRow(r){
+ const spec=V63_LABS.find(x=>x.name===r.name); if(!spec)return false;
+ const v=+r.value; return Number.isFinite(v)&&v>=spec.min&&v<=spec.max;
 }
 
 async function v622CanvasFromFile(file,rotation=0){
@@ -980,9 +985,9 @@ if(id('docTypeSelect'))id('docTypeSelect').onchange=e=>{if(docImportState.docs?.
 if(id('docStructuredSummary'))id('docStructuredSummary').oninput=e=>{if(docImportState.docs?.length===1)docImportState.docs[0].summary=e.target.value};
 if(id('clearOcrBtn'))id('clearOcrBtn').onclick=v622Reset;
 if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').onclick=()=>{
- const chosen=(docImportState.rows||[]).filter(r=>r.selected&&String(r.name).trim()&&String(r.value).trim());const docs=docImportState.docs||[];if(!chosen.length&&!docs.length)return alert('ยังไม่มีข้อมูลที่พร้อมบันทึก');
- let added=0;for(const r of chosen){db.labs.push({id:Date.now()+added,name:String(r.name).trim(),value:String(r.value).trim(),unit:String(r.unit||'').trim(),date:r.date||new Date().toISOString().slice(0,10),range:r.range||'',refLow:r.refLow??null,refHigh:r.refHigh??null,refMode:r.refMode||'none',category:r.category||'auto',source:'document-import-v6.2.2',sourceFile:docImportState.file?.name||''});added++}
- for(let i=0;i<docs.length;i++){const d=docs[i];db.documents.push({id:Date.now()+1000+i,name:d.name,type:d.type,date:d.date,summary:d.summary||'',source:'document-import-v6.2.2',ocrRotation:d.rotation||0,ocrConfidence:d.confidence??null})}
+ const chosen=(docImportState.rows||[]).filter(r=>r.selected&&String(r.name).trim()&&String(r.value).trim()&&v63PlausibleRow(r));const docs=docImportState.docs||[];if(!chosen.length&&!docs.length)return alert('ยังไม่มีข้อมูลที่พร้อมบันทึก');
+ let added=0;for(const r of chosen){db.labs.push({id:Date.now()+added,name:String(r.name).trim(),value:String(r.value).trim(),unit:String(r.unit||'').trim(),date:r.date||new Date().toISOString().slice(0,10),range:r.range||'',refLow:r.refLow??null,refHigh:r.refHigh??null,refMode:r.refMode||'none',category:r.category||'auto',source:'document-import-v6.3',sourceFile:docImportState.file?.name||'',importStatus:'confirmed'});added++}
+ for(let i=0;i<docs.length;i++){const d=docs[i];db.documents.push({id:Date.now()+1000+i,name:d.name,type:d.type,date:d.date,summary:d.summary||'',source:'document-import-v6.3',ocrRotation:d.rotation||0,ocrConfidence:d.confidence??null})}
  save();renderAnalysis();v622RenderMedicalDocuments();alert(`บันทึกสำเร็จ: ผลตรวจ ${added} รายการ • เอกสาร ${docs.length} ไฟล์`);v622Reset();
 };
 const __renderAllV622=renderAll;renderAll=function(){__renderAllV622();v622RenderMedicalDocuments()};
