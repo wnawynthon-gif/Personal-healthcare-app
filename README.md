@@ -1,13 +1,13 @@
-# Personal Healthcare App v6.6
+# Personal Healthcare App v6.5
 
-## New in v6.6
+## New in v6.5
 
-### Smart Lab Importer v6.6
+### Smart Lab Importer v6.5
 - Multi-pass OCR for photographed/HEIC laboratory reports, including a high-contrast numeric pass.
 - Canonical medical-test dictionary and reference-value collision protection.
 - Ambiguous OCR values are never selected automatically and are labelled for manual review.
 - Reference ranges stay separate from patient results (range / max / min modes).
-- Confirmed v6.6 imports are excluded from legacy OCR quarantine.
+- Confirmed v6.5 imports are excluded from legacy OCR quarantine.
 - Multi-file image/PDF import
 - Auto document classification: lab/health check, chest X-ray, ultrasound, ECG, other
 - Image preprocessing and automatic 90°/270° OCR retry when confidence is poor

@@ -1,6 +1,6 @@
 {
-  "name": "Personal Healthcare v6.6",
-  "short_name": "Health v6.6",
+  "name": "Personal Healthcare v6.5",
+  "short_name": "Health v6.5",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
