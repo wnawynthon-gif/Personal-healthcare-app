@@ -12,7 +12,7 @@
 <div class="app">
   <header class="topbar">
     <div>
-      <div class="eyebrow">PERSONAL HEALTHCARE • V5</div>
+      <div class="eyebrow">PERSONAL HEALTHCARE • V6</div>
       <h1>สุขภาพของฉัน</h1>
       <p id="todayText"></p>
     </div>
@@ -29,6 +29,7 @@
     <button class="tab" data-page="meds">ยา</button>
     <button class="tab" data-page="labs">ผลตรวจ</button>
     <button class="tab" data-page="profile">โปรไฟล์</button>
+    <button class="tab" data-page="analysis">วิเคราะห์สุขภาพ</button>
     <button class="tab" data-page="report">รายงาน</button>
     <button class="tab" data-page="doctor">Doctor Report</button>
     <button class="tab" data-page="reminders">Reminder Center</button>
@@ -138,12 +139,16 @@
       <div class="card">
         <h2>ผลตรวจสุขภาพ</h2>
         <form id="labForm" class="form-grid">
-          <label>รายการ<input type="text" id="labName" required placeholder="เช่น HbA1c, LDL, Creatinine"></label>
+          <label>รายการตรวจ<input type="text" id="labName" required placeholder="เช่น HbA1c, LDL, Creatinine, eGFR"></label>
           <label>ค่า<input type="text" id="labValue" required placeholder="ผลตรวจ"></label>
-          <label>หน่วย<input type="text" id="labUnit" placeholder="เช่น mg/dL"></label>
+          <label>หน่วย<input type="text" id="labUnit" placeholder="เช่น mmol/L, mg/dL, mmol/mol"></label>
           <label>วันที่<input type="date" id="labDate" required></label>
-          <label class="full">ช่วงอ้างอิง/หมายเหตุ<input type="text" id="labRange" placeholder="ใส่ช่วงอ้างอิงจากใบแล็บ ไม่ใช้ค่ามาตรฐานเดา"></label>
-          <button class="primary full" type="submit">เพิ่มผลตรวจ</button>
+          <label>Ref. ต่ำสุด<input type="number" step="any" id="labRefLow" placeholder="จากใบแล็บ"></label>
+          <label>Ref. สูงสุด<input type="number" step="any" id="labRefHigh" placeholder="จากใบแล็บ"></label>
+          <label>รูปแบบช่วง<select id="labRefMode"><option value="range">ช่วง Low–High</option><option value="max">ต้องต่ำกว่าหรือเท่ากับ High</option><option value="min">ต้องสูงกว่าหรือเท่ากับ Low</option><option value="none">ไม่มี structured range</option></select></label>
+          <label>กลุ่ม<select id="labCategory"><option value="auto">Auto</option><option value="glucose">น้ำตาล</option><option value="lipid">ไขมัน</option><option value="kidney">ไต</option><option value="liver">ตับ</option><option value="blood">CBC/เลือด</option><option value="other">อื่น ๆ</option></select></label>
+          <label class="full">ช่วงอ้างอิง/หมายเหตุจากใบแล็บ<input type="text" id="labRange" placeholder="เช่น 3.5–5.5 หรือ &lt;5.0; แอปจะให้ความสำคัญกับช่วงจากแล็บนี้"></label>
+          <button class="primary full" type="submit">เพิ่มและวิเคราะห์ผลตรวจ</button>
         </form>
       </div>
       <div class="card"><h3>ประวัติผลตรวจ</h3><div id="labList" class="list"></div></div>
@@ -213,7 +218,7 @@
         <div class="settings-grid">
           <button class="primary" id="backupBtn">ดาวน์โหลด Backup</button>
           <label class="file-btn">นำเข้า Backup<input type="file" id="importFile" accept=".json,application/json"></label>
-<label class="file-btn">นำเข้า Lab CSV<input type="file" id="labCsvFile" accept=".csv,text/csv"></label>
+<label class="file-btn">นำเข้า Lab CSV v6<input type="file" id="labCsvFile" accept=".csv,text/csv"></label>
           <button class="secondary" id="resetTodayBtn">รีเซ็ต Checklist วันนี้</button>
           <button class="danger-btn" id="clearDataBtn">ล้างข้อมูลทั้งหมด</button>
         </div>
@@ -344,6 +349,16 @@
         <h3>Sync History</h3>
         <div id="syncHistory" class="list"></div>
       </div>
+    </section>
+
+
+    <section class="page" id="analysis">
+      <div class="hero card analysis-hero"><div><span class="badge ok" id="analysisBadge">กำลังประเมิน</span><h2>Health Analysis</h2><p id="analysisHeadline">วิเคราะห์จากข้อมูลที่คุณบันทึก โดยให้ช่วงอ้างอิงของห้องแล็บเป็นหลัก</p></div><div class="analysis-score"><strong id="attentionCount">0</strong><small>ประเด็นติดตาม</small></div></div>
+      <div class="card safety"><strong>หลักการวิเคราะห์</strong><p>แอปจะแยก “ค่าที่อยู่นอกช่วงอ้างอิง/แนวโน้มที่ควรติดตาม” ออกจาก “การวินิจฉัยโรค” ผลวิเคราะห์ไม่ใช้แทนแพทย์ และไม่เปลี่ยนยาหรือขนาดยาเอง</p></div>
+      <div class="grid analysis-grid"><div class="card"><div class="section-title"><h3>ประเด็นสำคัญ</h3><span class="muted">Priority</span></div><div id="analysisPriorities" class="list"></div></div><div class="card"><div class="section-title"><h3>ภาพรวมระบบ</h3><span class="muted">Overview</span></div><div id="systemOverview" class="system-overview"></div></div></div>
+      <div class="card"><div class="section-title"><h3>ผลตรวจล่าสุด</h3><span class="muted">เทียบช่วงอ้างอิง + แนวโน้ม</span></div><div class="analysis-tools"><select id="analysisCategoryFilter"><option value="all">ทุกกลุ่ม</option><option value="glucose">น้ำตาล</option><option value="lipid">ไขมัน</option><option value="kidney">ไต</option><option value="liver">ตับ</option><option value="blood">CBC/เลือด</option><option value="other">อื่น ๆ</option></select><button class="secondary" id="reanalyseBtn">วิเคราะห์ใหม่</button></div><div id="labAnalysisList" class="lab-analysis-list"></div></div>
+      <div class="card"><h3>แนวโน้มผลตรวจ</h3><p class="muted">เลือกการตรวจเพื่อดูค่าตามเวลา</p><select id="trendTestSelect"></select><canvas id="labTrendChart" width="900" height="300"></canvas><div id="trendNarrative" class="trend-note"></div></div>
+      <div class="card"><div class="section-title"><div><h3>Clinical Review Summary</h3><p class="muted">หัวข้อสำหรับนำไปคุยกับแพทย์</p></div><button class="secondary" id="copyReviewBtn">Copy Summary</button></div><div id="clinicalReviewSummary" class="review-summary"></div></div>
     </section>
 
 </main>
