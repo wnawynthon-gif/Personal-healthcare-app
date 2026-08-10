@@ -1,7 +1,10 @@
-# Personal Healthcare App v6.2
+# Personal Healthcare App v6.2.1
 
-## New in v6.2
+## New in v6.2.1
 - Upload lab reports as JPG / PNG / browser-supported images / PDF
+- iPad/Safari OCR fix: explicit worker/core/language paths + English fallback
+- OCR failures now show the real error and keep manual review available
+- Service worker changed to network-first for app updates
 - Image OCR in the browser with Tesseract.js (English + Thai)
 - PDF text extraction with PDF.js
 - OCR fallback for scanned PDF pages

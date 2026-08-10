@@ -637,14 +637,27 @@ async function loadPdfJs(){
 }
 async function getOcrWorker(){
  if(docImportState.worker)return docImportState.worker;
- if(!window.Tesseract?.createWorker)throw new Error('OCR library โหลดไม่สำเร็จ กรุณาเชื่อมต่ออินเทอร์เน็ตแล้ว Refresh');
- setOcrProgress('กำลังเตรียม OCR ภาษาอังกฤษ/ไทย…',5);
- docImportState.worker=await Tesseract.createWorker(['eng','tha'],1,{
+ if(!window.Tesseract?.createWorker)throw new Error('OCR library โหลดไม่สำเร็จ (Tesseract.js unavailable) กรุณาตรวจอินเทอร์เน็ตแล้ว Reload');
+ const opts={
+   workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/worker.min.js',
+   corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.0',
+   langPath:'https://tessdata.projectnaptha.com/4.0.0',
    logger:m=>{
      if(m.status==='recognizing text')setOcrProgress('กำลัง OCR…',(m.progress||0)*100);
-     else if(m.status)setOcrProgress(m.status,Math.max(5,(m.progress||0)*100));
+     else if(m.status)setOcrProgress('OCR: '+m.status,Math.max(5,(m.progress||0)*100));
    }
- });
+ };
+ // Safari/iPad can fail while loading multiple language packs. Try TH+EN first,
+ // then fall back to English so numeric laboratory results remain usable.
+ try{
+   setOcrProgress('กำลังเตรียม OCR ภาษาไทย + อังกฤษ…',5);
+   docImportState.worker=await Tesseract.createWorker(['eng','tha'],1,opts);
+ }catch(firstErr){
+   console.warn('Thai+English OCR init failed; retrying English only',firstErr);
+   setOcrProgress('กำลังลอง OCR ภาษาอังกฤษสำรอง…',5);
+   try{ docImportState.worker=await Tesseract.createWorker('eng',1,opts); }
+   catch(secondErr){ throw new Error('เริ่ม OCR ไม่สำเร็จ: '+(secondErr?.message||firstErr?.message||'unknown OCR error')); }
+ }
  return docImportState.worker;
 }
 async function ocrImageSource(source){
@@ -759,7 +772,16 @@ async function processLabDocument(file){
    docImportState.rows=detectLabRowsFromText(text);renderDetectedRows();
    if(!text)alert('ไม่พบข้อความในเอกสาร ลองใช้รูปที่คมชัดขึ้นหรือ PDF ต้นฉบับ');
  }catch(err){
-   setOcrProgress('อ่านเอกสารไม่สำเร็จ',0);alert('นำเข้าเอกสารไม่สำเร็จ: '+err.message);
+   console.error('Document import/OCR error',err);
+   const msg=err?.message||String(err)||'Unknown error';
+   setOcrProgress('OCR อัตโนมัติไม่สำเร็จ — ใช้โหมดตรวจแก้ด้วยตนเองได้',0);
+   if(id('ocrHint'))id('ocrHint').textContent='รายละเอียด: '+msg;
+   // Never trap the user on an OCR failure. Keep the selected document preview
+   // visible and open the editable text/result area for manual entry/retry.
+   if(id('ocrResultArea'))id('ocrResultArea').style.display='block';
+   if(id('ocrRawText')&&!id('ocrRawText').value)id('ocrRawText').placeholder='OCR ไม่สำเร็จ คุณสามารถพิมพ์/วางข้อความจากผลตรวจที่นี่ แล้วกด “ตรวจหารายการผลตรวจ”';
+   docImportState.rows=[];renderDetectedRows();
+   alert('OCR อัตโนมัติไม่สำเร็จ แต่ยังใช้ไฟล์นี้ต่อได้\n\n'+msg+'\n\nพิมพ์หรือวางข้อความผลตรวจ แล้วกด “ตรวจหารายการผลตรวจ”');
  }
 }
 if(id('labDocFile'))id('labDocFile').onchange=e=>{const f=e.target.files?.[0];if(f)processLabDocument(f)};
