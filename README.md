@@ -55,3 +55,5 @@ Only confirmed extracted lab records become part of the health database and can 
 ## Deploy
 Upload all v6.2 files to the existing GitHub Pages repository root and replace the older v6/v6.1 files.
 No new Supabase project or table is required.
+
+Deployment trigger: v6.9
