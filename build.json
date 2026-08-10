@@ -1,5 +1,5 @@
 {
-  "version": "V7.2",
-  "buildId": "7.2.0-20260810",
-  "ocrEngine": "V7.2 Crop-First Result Engine"
+  "version": "V7.2.1",
+  "buildId": "7.2.1-20260810",
+  "ocrEngine": "V7.2.1 Cell-Isolated Numeric Engine"
 }

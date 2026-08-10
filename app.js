@@ -1,7 +1,7 @@
 
 // ---------- v7.0 Build / Deployment Guard ----------
-const PH_BUILD_VERSION='7.0';
-const PH_BUILD_ID='7.0.0-20260810';
+const PH_BUILD_VERSION='7.2.1';
+const PH_BUILD_ID='7.2.1-20260810';
 const PH_OCR_ENGINE='V7.2 Cell-Isolated Numeric Engine';
 window.__PH_BUILD__={version:PH_BUILD_VERSION,id:PH_BUILD_ID,ocr:PH_OCR_ENGINE};
 const KEY='healthcare_v62';

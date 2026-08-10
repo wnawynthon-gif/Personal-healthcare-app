@@ -1,9 +1,9 @@
-# Personal Healthcare App v7.2
+# Personal Healthcare App v7.1
 
-**Build ID:** `7.2.0-20260810`  
-**OCR engine:** V7.2 Crop-First Result Engine
+**Build ID:** `7.1.0-20260810`  
+**OCR engine:** V7.1 Crop-First Result Engine
 
-## New in v7.2
+## New in v7.1
 - Corrected Result-row geometry using the supplied Golden Jubilee/Mahidol source report.
 - Result OCR crop no longer overlaps Reference/Interpretation columns.
 - Preview shows the original Result-cell image beside each extracted value.
