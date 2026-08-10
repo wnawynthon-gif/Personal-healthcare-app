@@ -12,7 +12,7 @@
 <div class="app">
   <header class="topbar">
     <div>
-      <div class="eyebrow">PERSONAL HEALTHCARE • V6.1</div>
+      <div class="eyebrow">PERSONAL HEALTHCARE • V6.2</div>
       <h1>สุขภาพของฉัน</h1>
       <p id="todayText"></p>
     </div>
@@ -137,6 +137,50 @@
 
     <section class="page" id="labs">
       <div class="card">
+        <div class="section-title">
+          <div>
+            <h2>นำเข้าผลตรวจจากรูป / PDF</h2>
+            <p class="muted">JPG, PNG, รูปจากกล้อง หรือ PDF → อ่านข้อความ → ตรวจแก้ → ยืนยันก่อนบันทึก</p>
+          </div>
+          <span class="pill">V6.2</span>
+        </div>
+
+        <div class="doc-import-grid">
+          <label class="doc-drop" id="labDocDrop">
+            <input type="file" id="labDocFile" accept="image/*,.pdf,application/pdf">
+            <strong>📄 เลือกรูปหรือ PDF ผลตรวจ</strong>
+            <small>ไฟล์จะถูกประมวลผลใน browser ของอุปกรณ์ก่อน ไม่อัปโหลดไป Supabase จนกว่าคุณจะกดยืนยันผล</small>
+          </label>
+
+          <div class="doc-preview" id="labDocPreview">
+            <div class="muted">ยังไม่ได้เลือกไฟล์</div>
+          </div>
+        </div>
+
+        <div id="ocrProgressWrap" class="ocr-progress-wrap" style="display:none">
+          <div class="section-title"><strong id="ocrStatus">กำลังอ่านเอกสาร…</strong><span id="ocrPercent">0%</span></div>
+          <div class="progress"><span id="ocrProgressBar" style="width:0%"></span></div>
+          <small class="muted" id="ocrHint">PDF ที่มีข้อความจะอ่านโดยตรง; เอกสารสแกน/รูปใช้ OCR</small>
+        </div>
+
+        <div id="ocrResultArea" style="display:none">
+          <h3>ข้อความที่อ่านได้</h3>
+          <textarea id="ocrRawText" class="ocr-textarea" rows="10" placeholder="ข้อความจากเอกสาร"></textarea>
+          <div class="ocr-actions">
+            <button class="secondary" id="detectLabsBtn" type="button">ตรวจหารายการผลตรวจ</button>
+            <button class="secondary" id="clearOcrBtn" type="button">ล้าง</button>
+          </div>
+
+          <div class="section-title import-title">
+            <div><h3>Preview ก่อนบันทึก</h3><p class="muted">OCR อาจอ่านตัวเลข/หน่วยผิด กรุณาตรวจทุกแถว</p></div>
+            <span id="detectedCount" class="pill">0 รายการ</span>
+          </div>
+          <div id="detectedLabRows" class="detected-table"></div>
+          <button class="primary full" id="confirmDetectedLabsBtn" type="button" disabled>ยืนยันและบันทึกผลที่เลือก</button>
+        </div>
+      </div>
+
+      <div class="card">
         <h2>ผลตรวจสุขภาพ</h2>
         <form id="labForm" class="form-grid">
           <label>รายการตรวจ<input type="text" id="labName" required placeholder="เช่น HbA1c, LDL, Creatinine, eGFR"></label>
@@ -150,14 +194,6 @@
           <label class="full">ช่วงอ้างอิง/หมายเหตุจากใบแล็บ<input type="text" id="labRange" placeholder="เช่น 3.5–5.5 หรือ &lt;5.0; แอปจะให้ความสำคัญกับช่วงจากแล็บนี้"></label>
           <button class="primary full" type="submit">เพิ่มและวิเคราะห์ผลตรวจ</button>
         </form>
-      </div>
-      <div class="card lab-import-card">
-        <div class="section-title"><div><span class="badge ok">NEW V6.1</span><h3>นำเข้าผลตรวจหลายรายการ</h3></div><span class="muted">CSV → Preview → Confirm</span></div>
-        <p class="muted">เลือกไฟล์ CSV แล้วตรวจรายการก่อนบันทึก ระบบจะยังไม่เพิ่มข้อมูลจนกด “ยืนยันนำเข้า”</p>
-        <div class="import-actions"><label class="file-btn">เลือก Lab CSV<input type="file" id="labCsvFileV61" accept=".csv,text/csv"></label><button class="secondary" type="button" id="clearLabPreviewBtn" disabled>ล้าง Preview</button></div>
-        <div id="labImportStatus" class="tip">รองรับคอลัมน์ name, value, date และคอลัมน์เสริม unit, ref_low, ref_high, ref_mode, range, category</div>
-        <div id="labImportPreview"></div>
-        <button class="primary full" type="button" id="confirmLabImportBtn" style="display:none">ยืนยันนำเข้า</button>
       </div>
       <div class="card"><h3>ประวัติผลตรวจ</h3><div id="labList" class="list"></div></div>
     </section>
@@ -372,6 +408,7 @@
 </main>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

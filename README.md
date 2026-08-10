@@ -1,28 +1,30 @@
-# Personal Healthcare App v6.1
+# Personal Healthcare App v6.2
 
-## New in v6
-- Health Analysis page
-- Lab analysis using laboratory reference ranges as primary comparison
-- Structured low/high/max/min reference inputs
-- HbA1c, lipids and eGFR conservative guidance flags
-- Lab trends and charts
-- Clinical Review Summary
-- CSV v6 import
-- Smart Sync that does not increment revision when health data is unchanged
-- Existing v5 Supabase/RLS remains compatible
+## New in v6.2
+- Upload lab reports as JPG / PNG / browser-supported images / PDF
+- Image OCR in the browser with Tesseract.js (English + Thai)
+- PDF text extraction with PDF.js
+- OCR fallback for scanned PDF pages
+- Raw extracted text preview
+- Heuristic lab-row detection
+- Editable Preview before confirmation
+- Select/unselect detected results
+- Reference low/high fields before saving
+- Confirmed results feed the existing Health Analysis engine
+- Source file name stored with imported lab records
+- Existing Supabase sync, RLS, BP, weight, medication, reminders and Doctor Report remain compatible
+
+## Privacy behavior
+The selected document is read locally in the browser. It is not uploaded to Supabase merely by selecting it.
+Only confirmed extracted lab records become part of the health database and can then be synced by the existing Supabase sync controls.
+
+## Important OCR limitations
+- OCR is not guaranteed to read every laboratory layout correctly.
+- Always verify test name, result, unit and reference range in Preview before confirming.
+- PDF files with an embedded text layer are generally more reliable than photos/scans.
+- HEIC support depends on Safari/iOS decoding support.
+- Internet is needed the first time OCR/PDF libraries and OCR language data are loaded.
 
 ## Deploy
-Replace v5 static files in the same GitHub Pages repository with v6 files. Your existing Supabase project and RLS policies can remain unchanged.
-
-## Medical safety
-This app highlights data for review; it does not diagnose disease or change medication. Laboratory reference ranges and clinician-set targets take priority over general guidance.
-
-
-## New in v6.1
-- Safe multi-row Lab CSV import on the Results page
-- Preview before any data is written
-- Validation of required name/value/date fields
-- Supports quoted CSV fields and DD/MM/YYYY or YYYY-MM-DD dates
-- Optional ref_low, ref_high, ref_mode, range and category fields
-- Confirmed rows flow directly into the existing v6 Health Analysis engine
-- Existing local data and Supabase schema remain compatible
+Upload all v6.2 files to the existing GitHub Pages repository root and replace the older v6/v6.1 files.
+No new Supabase project or table is required.
