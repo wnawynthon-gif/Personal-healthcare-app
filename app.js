@@ -2,7 +2,7 @@
 // ---------- v7.0 Build / Deployment Guard ----------
 const PH_BUILD_VERSION='7.0';
 const PH_BUILD_ID='7.0.0-20260810';
-const PH_OCR_ENGINE='V7.1 Crop-First Result Engine';
+const PH_OCR_ENGINE='V7.2 Cell-Isolated Numeric Engine';
 window.__PH_BUILD__={version:PH_BUILD_VERSION,id:PH_BUILD_ID,ocr:PH_OCR_ENGINE};
 const KEY='healthcare_v62';
 const OLD='healthcare_v6';
@@ -1078,19 +1078,34 @@ function v71NumericTokens(txt){
  let t=String(txt||'').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/,/g,'.');
  return [...t.matchAll(/\d+(?:\.\d+)?/g)].map(m=>({raw:m[0],v:+m[0]})).filter(x=>Number.isFinite(x.v));
 }
+function v72RefPlausibility(spec,v){
+ let score=0;
+ if(spec.low!=null&&spec.high!=null){
+   const mid=(spec.low+spec.high)/2, span=Math.max(.0001,spec.high-spec.low);
+   const z=Math.abs(v-mid)/span;
+   if(z<=1.5)score+=18; else if(z<=3)score+=8; else if(z>8)score-=35;
+ }else if(spec.high!=null){
+   if(v<=spec.high*1.8)score+=12; else if(v>spec.high*6)score-=35;
+ }else if(spec.low!=null){
+   if(v>=spec.low*.55)score+=12; else if(v<spec.low*.12)score-=35;
+ }
+ return score;
+}
 function v71CandidateScore(spec,c,confidence=0){
  if(c.v<spec.min||c.v>spec.max||v65IsRefValue(spec,c.v))return -999;
- let score=20+Math.max(0,Math.min(20,confidence/5));
+ let score=20+Math.max(0,Math.min(20,confidence/5))+v72RefPlausibility(spec,c.v);
  const hasDot=c.raw.includes('.');
- if(spec.shape==='decimal')score+=hasDot?18:-5;
- if(spec.name==='WBC'){ if(c.v>=3&&c.v<=15)score+=15; if(hasDot)score+=12; }
- if(spec.name==='Hb'){ if(c.v>=10&&c.v<=20)score+=18; if(hasDot)score+=8; }
- if(spec.name==='Hct'){ if(c.v>=30&&c.v<=60)score+=18; if(hasDot)score+=8; }
- if(spec.name==='LDL-C'){ if(c.v>=40&&c.v<=300)score+=18; if(c.v<20)score-=35; }
- if(spec.name==='eGFR'){ if(c.v>=30&&c.v<=150)score+=18; if(c.v<10)score-=35; }
- if(spec.name==='SGPT (ALT)'||spec.name==='SGOT (AST)'||spec.name==='Alk-phos'){ if(c.v>=5&&c.v<=250)score+=10; }
- if(spec.name==='HbA1c'){ if(c.v>=4&&c.v<=15)score+=20; if(hasDot)score+=10; }
- if(spec.name==='PSA'){ if(c.v>=0&&c.v<=20)score+=15; if(hasDot)score+=10; }
+ if(spec.shape==='decimal')score+=hasDot?18:-8;
+ if(spec.name==='WBC'){ if(c.v>=3&&c.v<=20)score+=18; if(hasDot)score+=12; if(c.v>30)score-=25; }
+ if(spec.name==='Hb'){ if(c.v>=8&&c.v<=22)score+=22; if(hasDot)score+=10; if(c.v<7)score-=35; }
+ if(spec.name==='Hct'){ if(c.v>=25&&c.v<=65)score+=22; if(hasDot)score+=10; if(c.v<20)score-=30; }
+ if(spec.name==='LDL-C'){ if(c.v>=25&&c.v<=350)score+=20; if(c.v<20)score-=45; }
+ if(spec.name==='eGFR'){ if(c.v>=20&&c.v<=180)score+=20; if(c.v<10)score-=50; }
+ if(spec.name==='Creatinine'){ if(c.v>=.3&&c.v<=3)score+=20; if(hasDot)score+=15; if(c.v>5)score-=35; }
+ if(spec.name==='SGPT (ALT)'||spec.name==='SGOT (AST)'){ if(c.v>=5&&c.v<=400)score+=12; }
+ if(spec.name==='Alk-phos'){ if(c.v>=20&&c.v<=500)score+=18; if(c.v>1000)score-=50; }
+ if(spec.name==='HbA1c'){ if(c.v>=3&&c.v<=18)score+=20; if(hasDot)score+=10; }
+ if(spec.name==='PSA'){ if(c.v>=0&&c.v<=50)score+=15; if(hasDot)score+=10; }
  return score;
 }
 function v71PickBest(spec,reads){
@@ -1099,8 +1114,21 @@ function v71PickBest(spec,reads){
  if(!all.length)return null;
  const grouped=new Map();
  for(const c of all){const k=String(c.v);const g=grouped.get(k)||{v:c.v,raw:c.raw,count:0,score:0,passes:[]};g.count++;g.score+=v71CandidateScore(spec,c,c.confidence);g.passes.push(c.pass);grouped.set(k,g)}
- const ranked=[...grouped.values()].filter(g=>g.score>-500).sort((a,b)=>(b.count*35+b.score)-(a.count*35+a.score));
+ const ranked=[...grouped.values()].filter(g=>g.score>-500).sort((a,b)=>(b.count*40+b.score)-(a.count*40+a.score));
  return ranked[0]||null;
+}
+function v72EraseRules(canvas){
+ const ctx=canvas.getContext('2d',{willReadFrequently:true}),im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data,w=canvas.width,h=canvas.height;
+ const dark=(x,y)=>{const i=(y*w+x)*4;return d[i]<90};
+ const cols=[];for(let x=0;x<w;x++){let n=0;for(let y=0;y<h;y++)if(dark(x,y))n++;if(n>h*.72)cols.push(x)}
+ const rows=[];for(let y=0;y<h;y++){let n=0;for(let x=0;x<w;x++)if(dark(x,y))n++;if(n>w*.72)rows.push(y)}
+ for(const x of cols)for(let xx=Math.max(0,x-2);xx<=Math.min(w-1,x+2);xx++)for(let y=0;y<h;y++){let i=(y*w+xx)*4;d[i]=d[i+1]=d[i+2]=255}
+ for(const y of rows)for(let yy=Math.max(0,y-2);yy<=Math.min(h-1,y+2);yy++)for(let x=0;x<w;x++){let i=(yy*w+x)*4;d[i]=d[i+1]=d[i+2]=255}
+ ctx.putImageData(im,0,0);return canvas;
+}
+function v72CellSpec(name){
+ const lower=name==='HbA1c'||name==='PSA';
+ return lower?{x:[.145,.205],half:.0050}:{x:[.242,.318],half:.0058};
 }
 async function v71RecognizeCell(worker,crop,spec,tag){
  const reads=[];
@@ -1118,25 +1146,26 @@ async function v68ExtractTemplateRows(file,rotation,baseText){
  const base=await v622CanvasFromFile(file,rotation||0,'soft');
  if(!v68TemplateLikely(baseText,base))return [];
  const worker=await getOcrWorker(),rows=[];
- const passes=[
-   {x0:.238,x1:.323,dy:.0000,variant:'soft',tag:'soft'},
-   {x0:.242,x1:.320,dy:-.0005,variant:'contrast',tag:'contrast'},
-   {x0:.234,x1:.326,dy:.0005,variant:'binary',tag:'binary'}
- ];
  for(let i=0;i<V68_TEMPLATE_ROWS.length;i++){
    const [name,y]=V68_TEMPLATE_ROWS[i],spec=V65_LABS.find(x=>x.name===name);if(!spec)continue;
-   setOcrProgress(`V7.1 อ่านช่อง Result แบบ Crop-First ${i+1}/${V68_TEMPLATE_ROWS.length}: ${name}`,74+Math.round(22*(i+1)/V68_TEMPLATE_ROWS.length));
-   const reads=[];
-   for(const ps of passes){const crop=v68CropCanvas(base,ps.x0,y-0.0105+ps.dy,ps.x1,y+0.0105+ps.dy,ps.variant);reads.push(...await v71RecognizeCell(worker,crop,spec,ps.tag));}
-   const winner=v71PickBest(spec,reads);if(!winner)continue;
+   setOcrProgress(`V7.2 แยกช่อง Result ${i+1}/${V68_TEMPLATE_ROWS.length}: ${name}`,74+Math.round(22*(i+1)/V68_TEMPLATE_ROWS.length));
+   const cs=v72CellSpec(name), reads=[];
+   const plans=[
+     {x0:cs.x[0],x1:cs.x[1],dy:0,variant:'soft',tag:'iso-soft'},
+     {x0:cs.x[0]+.004,x1:cs.x[1]-.004,dy:-.0002,variant:'contrast',tag:'iso-contrast'},
+     {x0:cs.x[0]-.003,x1:cs.x[1]+.003,dy:.0002,variant:'binary',tag:'iso-binary'}
+   ];
+   for(const ps of plans){let crop=v68CropCanvas(base,ps.x0,y-cs.half+ps.dy,ps.x1,y+cs.half+ps.dy,ps.variant);crop=v72EraseRules(crop);reads.push(...await v71RecognizeCell(worker,crop,spec,ps.tag));}
+   const winner=v71PickBest(spec,reads);
+   let cropPreview='';try{cropPreview=v68CropCanvas(base,cs.x[0]-.008,y-cs.half-.001,cs.x[1]+.008,y+cs.half+.001,'soft').toDataURL('image/jpeg',.86)}catch(e){}
+   if(!winner){rows.push({selected:false,name:spec.name,value:'',unit:spec.unit,date:v622ParseDate(baseText),range:v65ReferenceMeta(spec).range,refLow:spec.low,refHigh:spec.high,refMode:v65ReferenceMeta(spec).mode,category:spec.cat,confidence:'low',reviewRequired:true,qualityReason:'V7.2: ช่อง Result ยังอ่านตัวเลขที่เชื่อถือได้ไม่ได้ • เว้นว่างแทนการเดา',ocrCropPreview:cropPreview,ocrCellText:reads.map(a=>`${a.pass}:${a.raw||'∅'}`).join(' | '),sourceMode:'v7.2-cell-isolated',ocrConsensus:false});continue;}
    const value=String(winner.v),ref=v65ReferenceMeta(spec),vv=winner.v;
    const strong=winner.count>=2;
-   const suspicious=(spec.name==='Hb'&&vv<7)||(spec.name==='WBC'&&(vv<1||vv>30))||(spec.name==='LDL-C'&&vv<20)||(spec.name==='eGFR'&&vv<10)||(spec.name==='PSA'&&vv>100);
-   let cropPreview='';try{cropPreview=v68CropCanvas(base,.225,y-.0115,.330,y+.0115,'soft').toDataURL('image/jpeg',.82)}catch(e){}
-   rows.push({selected:false,name:spec.name,value,unit:spec.unit,date:v622ParseDate(baseText),range:ref.range,refLow:spec.low,refHigh:spec.high,refMode:ref.mode,category:spec.cat,
+   const suspicious=(spec.name==='Hb'&&vv<7)||(spec.name==='WBC'&&(vv<1||vv>30))||(spec.name==='LDL-C'&&vv<20)||(spec.name==='eGFR'&&vv<10)||(spec.name==='Creatinine'&&vv>5)||(spec.name==='Hct'&&vv<20)||(spec.name==='Alk-phos'&&vv>1000)||(spec.name==='PSA'&&vv>100);
+   rows.push({selected:false,name:spec.name,value:suspicious?'':value,unit:spec.unit,date:v622ParseDate(baseText),range:ref.range,refLow:spec.low,refHigh:spec.high,refMode:ref.mode,category:spec.cat,
      confidence:(strong&&!suspicious)?'high':'low',reviewRequired:true,
-     qualityReason:suspicious?'V7.1: ค่านี้ผิดปกติมากสำหรับ OCR กรุณาเทียบภาพช่อง Result ด้านล่างก่อนบันทึก':(strong?'V7.1: Crop-First อ่านค่าจากช่อง Result โดยตรง • ยังต้องเทียบใบจริงก่อนบันทึก':'V7.1: OCR หลายโหมดอ่านไม่ตรงกัน • ห้ามบันทึกจนกว่าจะตรวจแก้'),
-     ocrCropPreview:cropPreview,ocrCellText:reads.map(a=>`${a.pass}:${a.raw||'∅'}`).join(' | '),sourceMode:'v7.1-crop-first',ocrConsensus:strong});
+     qualityReason:suspicious?'V7.2: OCR ได้ค่าที่ไม่น่าเชื่อถือ จึงเว้นช่อง Result ว่าง • กรุณาอ่านจากภาพ crop และกรอกเอง':(strong?'V7.2: Cell-Isolated OCR อ่านเฉพาะตัวเลขกลางช่อง Result • กรุณาเทียบภาพก่อนบันทึก':'V7.2: OCR หลายโหมดอ่านไม่ตรงกัน • แสดงค่าที่ดีที่สุดแต่ยังต้องตรวจภาพ'),
+     ocrCropPreview:cropPreview,ocrCellText:reads.map(a=>`${a.pass}:${a.raw||'∅'}`).join(' | '),sourceMode:'v7.2-cell-isolated',ocrConsensus:strong});
  }
  try{await worker.setParameters({tessedit_pageseg_mode:'6',tessedit_char_whitelist:'',preserve_interword_spaces:'1'});}catch(e){}
  return rows;
@@ -1145,15 +1174,14 @@ function v68MergeRows(textRows,templateRows){
  const by=new Map();for(const r of textRows||[])by.set(r.name,r);
  for(const r of templateRows||[]){
    const old=by.get(r.name);
-   // v7.1: crop-first. If the crop produced a plausible value, keep it as the visible value.
-   // A disagreement with full-page OCR lowers confidence but never replaces the crop with a worse candidate.
-   if(v63PlausibleRow(r)){
-     if(old&&String(old.value)!==String(r.value)){
-       r.confidence='low';r.reviewRequired=true;
-       r.qualityReason='V7.1: Crop-First และ full-page OCR อ่านไม่ตรงกัน • ใช้ค่า crop เป็นหลักแต่ต้องตรวจภาพก่อนบันทึก';
-     }
+   // v7.2: isolated result-cell OCR has priority only when it produced a plausible numeric value.
+   // Suspicious/blank crop results never inherit a dangerous value from full-page OCR.
+   if(r.value!==''&&v63PlausibleRow(r)){
+     if(old&&String(old.value)!==String(r.value)){r.confidence='low';r.reviewRequired=true;r.qualityReason='V7.2: Result-cell OCR และ full-page OCR อ่านไม่ตรงกัน • ใช้ค่าจากช่อง Result เป็นหลักแต่ต้องตรวจภาพ';}
      by.set(r.name,r);
-   }else if(!old)by.set(r.name,r);
+   }else{
+     by.set(r.name,r); // keep blank + proof image instead of a guessed full-page value
+   }
  }
  return [...by.values()];
 }
@@ -1190,7 +1218,7 @@ async function v622ProcessFiles(files){
    // dedupe detected lab rows across multiple pages/files
    const seen=new Set();docImportState.rows=docImportState.rows.filter(r=>{const k=cleanName(r.name)+'|'+r.value+'|'+r.date;if(seen.has(k))return false;seen.add(k);return true});
    if(id('ocrRawText'))id('ocrRawText').value=docImportState.text;if(id('ocrResultArea'))id('ocrResultArea').style.display='block';
-   setOcrProgress('อ่านเอกสารเสร็จแล้ว — V7.1 • Crop-First Result Engine: อ่านช่อง Result หลายโหมด + ให้ crop เป็นแหล่งหลัก + แสดงภาพต้นฉบับ',100);v622RenderDocumentMeta();renderDetectedRows();
+   setOcrProgress('อ่านเอกสารเสร็จแล้ว — V7.2 • Cell-Isolated Numeric Engine: ตัดเส้นตาราง + ลดความสูง crop + อ่านเฉพาะตัวเลขกลางช่อง Result',100);v622RenderDocumentMeta();renderDetectedRows();
    if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').disabled=!(docImportState.rows.some(r=>r.selected)||docImportState.docs.length);
  }catch(err){console.error(err);setOcrProgress('อ่านเอกสารไม่สำเร็จ',0);if(id('ocrResultArea'))id('ocrResultArea').style.display='block';alert('อ่านเอกสารไม่สำเร็จ: '+(err?.message||err))}
 }
