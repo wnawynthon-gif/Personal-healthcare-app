@@ -1,1312 +1,307 @@
 
-// ---------- v7.0 Build / Deployment Guard ----------
-const PH_BUILD_VERSION='7.3';
-const PH_BUILD_ID='7.3.0-20260810';
-const PH_OCR_ENGINE='V7.3 Numeric Result Recognition Engine';
-window.__PH_BUILD__={version:PH_BUILD_VERSION,id:PH_BUILD_ID,ocr:PH_OCR_ENGINE};
-const KEY='healthcare_v62';
-const OLD='healthcare_v6';
-const blank={
- profile:{height:167,targetWeight:null,weeklyGoal:150,weightFreq:7,bpReminderEnabled:false,bpMorningTime:'08:00',bpEveningTime:'20:00',conditions:'',allergies:'',displayName:'My Health',syncEmail:''},
- reminders:{medEnabled:true,weightEnabled:false,weightTime:'08:00',activityEnabled:false,activityTime:'18:00'},
- sync:{mode:'local',lastSyncAt:null,lastCloudUpdatedAt:null,lastSyncedLocalUpdatedAt:null,revision:0,history:[]},
- bp:[],weights:[{date:new Date().toISOString(),value:80}],activities:[],meds:[],labs:[],medTaken:[],checks:{}
-};
-let db=JSON.parse(localStorage.getItem(KEY)||'null');
-if(!db){
- const old=JSON.parse(localStorage.getItem(OLD)||'null');
- db=old?{...blank,...old,profile:{...blank.profile,...(old.profile||{})},medTaken:old.medTaken||[]}:blank;
-}
-let reportDays=7;
-function save(){localStorage.setItem(KEY,JSON.stringify(db));renderAll()}
-function fmtDate(x){return new Date(x).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'})}
-function dateOnly(x){return new Date(x).toLocaleDateString('th-TH',{dateStyle:'medium'})}
-function sameDay(a,b=new Date()){return new Date(a).toDateString()===new Date(b).toDateString()}
-function withinDays(x,days){return new Date(x)>=new Date(Date.now()-days*86400000)}
-function mean(a){return a.length?a.reduce((s,x)=>s+x,0)/a.length:null}
-function bmi(w,h){return w/((h/100)**2)}
-function id(x){return document.getElementById(x)}
-id('todayText').textContent=new Date().toLocaleDateString('th-TH',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-id('labDate').valueAsDate=new Date();
+const $=(s,root=document)=>root.querySelector(s); const $$=(s,root=document)=>[...root.querySelectorAll(s)];
+const KEY="ph_v8_data", CFG="ph_v8_cfg";
+const blank={records:[],medications:[],documents:[]};
+let db=load(), importState={raw:[],headers:[],valid:[],invalid:[],duplicates:[]};
 
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
- document.querySelectorAll('.tab,.page').forEach(x=>x.classList.remove('active'));b.classList.add('active');id(b.dataset.page).classList.add('active');
- if(b.dataset.page==='report')drawCharts();
- if(b.dataset.page==='doctor')renderDoctor();
-});
-document.querySelectorAll('.range').forEach(b=>b.onclick=()=>{document.querySelectorAll('.range').forEach(x=>x.classList.remove('active'));b.classList.add('active');reportDays=+b.dataset.days;renderReport();drawCharts()});
+function load(){try{return {...blank,...JSON.parse(localStorage.getItem(KEY)||"{}")}}catch{return structuredClone(blank)}}
+function save(){localStorage.setItem(KEY,JSON.stringify(db));renderAll();syncBadge()}
+function uid(){return crypto?.randomUUID?.() || "id-"+Date.now()+"-"+Math.random().toString(16).slice(2)}
+function esc(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m]))}
+function fmtDate(v){if(!v)return "—";const d=new Date(v);return isNaN(d)?String(v):d.toLocaleString("th-TH",{year:"2-digit",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}
+function typeLabel(t){return ({weight:"น้ำหนัก",blood_pressure:"ความดัน",pulse:"ชีพจร",glucose:"น้ำตาล",lab:"ผลแล็บ",exercise:"ออกกำลังกาย",note:"บันทึก"})[t]||t||"—"}
+function recordVal(r){if(r.type==="blood_pressure")return `${r.value??"—"}/${r.value2??"—"}`; return r.value??"—"}
+function guessUnit(type){return ({weight:"kg",blood_pressure:"mmHg",pulse:"bpm",glucose:"mg/dL"})[type]||""}
 
-function bpClass(s,d){
- if(s>180||d>120)return ['สูงมาก — วัดซ้ำและประเมินอาการ','danger'];
- if(s>=135||d>=85)return ['สูงกว่าค่าที่ใช้พิจารณาความดันสูงเมื่อวัดที่บ้าน','warn'];
- if(s<90||d<60)return ['ค่อนข้างต่ำ','warn'];
- return ['ต่ำกว่าเกณฑ์ความดันสูงที่บ้าน','ok'];
-}
-function todayMinutes(){
- return db.activities.filter(x=>sameDay(x.date)).reduce((a,b)=>a+b.minutes,0)
-}
-function weekMinutes(){
- return db.activities.filter(x=>withinDays(x.date,7)).reduce((a,b)=>a+b.minutes,0)
-}
-function medAppliesToday(m){
- const d=new Date().getDay(); if(m.freq==='weekdays')return d>=1&&d<=5; return true;
-}
-function medTakenToday(m){return db.medTaken.some(x=>x.medId===m.id&&sameDay(x.date))}
-function dueState(m){
- if(medTakenToday(m))return 'taken';
- const [h,mi]=m.time.split(':').map(Number); const due=new Date();due.setHours(h,mi,0,0);
- return new Date()>due?'overdue':'upcoming'
-}
-function notify(text){
- if('Notification' in window && Notification.permission==='granted') new Notification('Personal Healthcare',{body:text});
-}
-async function enableNotifications(){
- if(!('Notification' in window)){alert('Browser นี้ไม่รองรับ Web Notification');return}
- const p=await Notification.requestPermission();
- alert(p==='granted'?'เปิดการแจ้งเตือนแล้ว (ทำงานเมื่อ browser/PWA อนุญาต)':'ยังไม่ได้อนุญาตการแจ้งเตือน');
-}
-id('notifyBtn').onclick=enableNotifications;
+function syncBadge(){const cfg=getCfg();$("#storageBadge").textContent=cfg.url&&cfg.key?"Local + Supabase ready":"Local mode"}
+function getCfg(){try{return JSON.parse(localStorage.getItem(CFG)||"{}")}catch{return {}}}
+function setCfg(c){localStorage.setItem(CFG,JSON.stringify(c));syncBadge()}
 
-id('bpForm').onsubmit=e=>{
- e.preventDefault();db.bp.push({date:new Date().toISOString(),sys:+id('sys').value,dia:+id('dia').value,pulse:id('pulse').value?+id('pulse').value:null,period:id('bpPeriod').value,note:id('bpNote').value});
- e.target.reset();save();
-};
-id('weightForm').onsubmit=e=>{
- e.preventDefault();db.profile.height=+id('height').value;db.weights.push({date:new Date().toISOString(),value:+id('weight').value});e.target.reset();id('height').value=db.profile.height;save()
-};
-id('activityForm').onsubmit=e=>{
- e.preventDefault();db.activities.push({date:new Date().toISOString(),type:id('activityType').value,minutes:+id('activityMinutes').value,note:id('activityNote').value});e.target.reset();save()
-};
-id('medForm').onsubmit=e=>{
- e.preventDefault();db.meds.push({id:Date.now(),name:id('medName').value,dose:id('medDose').value,time:id('medTime').value,freq:id('medFreq').value,lead:+id('medLead').value,note:id('medNote').value,active:true});e.target.reset();id('medLead').value=0;save()
-};
-id('labForm').onsubmit=e=>{
- e.preventDefault();db.labs.push({id:Date.now(),name:id('labName').value.trim(),value:id('labValue').value.trim(),unit:id('labUnit').value.trim(),date:id('labDate').value,range:id('labRange').value.trim(),refLow:id('labRefLow').value!==''?+id('labRefLow').value:null,refHigh:id('labRefHigh').value!==''?+id('labRefHigh').value:null,refMode:id('labRefMode').value,category:id('labCategory').value});e.target.reset();id('labDate').valueAsDate=new Date();id('labRefMode').value='range';id('labCategory').value='auto';save()
-};
-id('profileForm').onsubmit=e=>{
- e.preventDefault();db.profile={...db.profile,height:+id('profileHeight').value,targetWeight:id('targetWeight').value?+id('targetWeight').value:null,weeklyGoal:+id('weeklyGoal').value||0,weightFreq:+id('weightFreq').value,bpReminderEnabled:id('bpReminderEnabled').checked,bpMorningTime:id('bpMorningTime').value,bpEveningTime:id('bpEveningTime').value,conditions:id('conditions').value,allergies:id('allergies').value};save()
-};
-
-function delMed(x){db.meds=db.meds.filter(m=>m.id!==x);save()}
-function delLab(x){db.labs=db.labs.filter(m=>m.id!==x);save()}
-function takeMed(x){db.medTaken.push({medId:x,date:new Date().toISOString()});save()}
-window.delMed=delMed;window.delLab=delLab;window.takeMed=takeMed;
-
-function renderAlerts(){
- const alerts=[]; const last=db.bp.at(-1);
- if(last && (last.sys>180||last.dia>120)) alerts.push(`<div class="alert danger">ความดันล่าสุด ${last.sys}/${last.dia} mmHg สูงมาก ควรวัดซ้ำอย่างถูกวิธี และหากมีอาการผิดปกติรุนแรงให้ขอความช่วยเหลือทางการแพทย์ทันที</div>`);
- const overdue=db.meds.filter(m=>m.active&&medAppliesToday(m)&&dueState(m)==='overdue');
- if(overdue.length) alerts.push(`<div class="alert warn">มียา ${overdue.length} รายการที่เลยเวลาตามตารางที่คุณบันทึกไว้ กรุณาตรวจสอบคำสั่งใช้ยาเดิมของคุณ ไม่ควรเพิ่มขนาดยาเพื่อชดเชยเอง</div>`);
- id('alertBox').innerHTML=alerts.join('');
+function go(view){
+  $$(".view").forEach(v=>v.classList.toggle("active",v.id===`view-${view}`));
+  $$(".nav").forEach(n=>n.classList.toggle("active",n.dataset.view===view));
+  const meta={
+    dashboard:["ภาพรวมสุขภาพ","สรุปข้อมูลล่าสุด แนวโน้ม และสิ่งที่ควรติดตาม"],
+    records:["ข้อมูลสุขภาพ","บันทึกและจัดการข้อมูลสุขภาพแบบโครงสร้าง"],
+    import:["นำเข้าข้อมูล","Import Center v8.0 — ตรวจและแก้ไขก่อนบันทึก"],
+    meds:["ยา & เตือน","ช่วยจัดรายการยาและเวลาเตือน"],
+    files:["Document Inbox","เก็บ PDF และรูปเอกสารสุขภาพ"],
+    settings:["ตั้งค่า","การซิงก์และการจัดการข้อมูล"]
+  }[view];
+  $("#pageTitle").textContent=meta[0]; $("#pageSub").textContent=meta[1];
 }
-function renderTodayMeds(){
- const meds=db.meds.filter(m=>m.active&&medAppliesToday(m)).sort((a,b)=>a.time.localeCompare(b.time));
- id('todayMeds').innerHTML=meds.length?meds.map(m=>{
-  const st=dueState(m), taken=st==='taken';
-  return `<div class="item"><div><strong>${m.time} • ${m.name}</strong><small>${m.dose}${m.note?' • '+m.note:''}</small></div><div class="med-actions">${taken?'<span class="pill">กินแล้ว</span>':`<button class="taken" onclick="takeMed(${m.id})">กินแล้ว</button>`}${st==='overdue'?'<span class="overdue">เลยเวลา</span>':''}</div></div>`
- }).join(''):'<p class="muted">ยังไม่มียาตามตารางวันนี้</p>';
-}
-function renderProfile(){
- const p=db.profile;id('profileHeight').value=p.height||167;id('targetWeight').value=p.targetWeight??'';id('weeklyGoal').value=p.weeklyGoal??150;id('weightFreq').value=String(p.weightFreq||7);id('bpReminderEnabled').checked=!!p.bpReminderEnabled;id('bpMorningTime').value=p.bpMorningTime||'08:00';id('bpEveningTime').value=p.bpEveningTime||'20:00';id('conditions').value=p.conditions||'';id('allergies').value=p.allergies||'';
-}
-function renderAll(){
- const lastBP=db.bp.at(-1), lastW=db.weights.at(-1),p=db.profile;
- if(lastBP){let c=bpClass(lastBP.sys,lastBP.dia);id('bpLatest').textContent=`${lastBP.sys}/${lastBP.dia}`;id('bpStatus').textContent=c[0]}
- else{id('bpLatest').textContent='ยังไม่มี';id('bpStatus').textContent='เพิ่มค่าที่หน้า “บันทึก”'}
- if(lastW){id('weightLatest').textContent=`${lastW.value.toFixed(1)} kg`;id('bmiLatest').textContent=`BMI ${bmi(lastW.value,p.height).toFixed(1)}${p.targetWeight?' • เป้า '+p.targetWeight+' kg':''}`}
- const activeToday=db.meds.filter(m=>m.active&&medAppliesToday(m));id('medDue').textContent=`${activeToday.length} รายการ`;id('medStatus').textContent=activeToday.length?`${activeToday.filter(m=>medTakenToday(m)).length}/${activeToday.length} บันทึกว่ากินแล้ว`:'ยังไม่มีตารางยา';
- const wm=weekMinutes();id('activityWeek').textContent=`${wm} นาที`;id('activityGoal').textContent=`เป้าหมาย ${p.weeklyGoal||0} นาที`;
- const fields=[db.bp.length>0,db.weights.length>0,db.labs.length>0,db.meds.length>0,p.height>0];id('healthScore').textContent=Math.round(fields.filter(Boolean).length/fields.length*100)+'%';
- let status=['พร้อมติดตาม','ok']; if(lastBP)status=bpClass(lastBP.sys,lastBP.dia);id('statusBadge').textContent=status[0];id('statusBadge').className='badge '+status[1];
- id('summaryText').textContent=lastBP?`ความดันล่าสุด ${lastBP.sys}/${lastBP.dia} mmHg • น้ำหนัก ${lastW.value.toFixed(1)} kg`:'เพิ่มความดันครั้งแรกเพื่อเริ่มวิเคราะห์แนวโน้ม';
- const lastWeightDays=(Date.now()-new Date(lastW.date))/86400000;
- const tasks=[
-   ['bp',p.bpReminderEnabled?'วัดความดันเช้า/เย็นตามตาราง':'วัดความดันตามแผนของคุณ'],
-   ['activity',`กิจกรรมวันนี้ (7 วัน: ${wm}/${p.weeklyGoal||0} นาที)`],
-   ['weight',lastWeightDays>=p.weightFreq?'ถึงรอบชั่งน้ำหนักแล้ว':'ชั่งน้ำหนักตามรอบที่กำหนด']
- ];
- id('todayChecklist').innerHTML=tasks.map(([k,t])=>`<label class="check"><input type="checkbox" ${db.checks[k]?'checked':''} onchange="db.checks['${k}']=this.checked;save()"><span>${t}</span></label>`).join('');
- id('medList').innerHTML=db.meds.length?db.meds.map(m=>`<div class="item"><div><strong>${m.name} • ${m.time}</strong><small>${m.dose} • ${m.freq}${m.note?' • '+m.note:''}</small></div><button class="delete" onclick="delMed(${m.id})">ลบ</button></div>`).join(''):'<p class="muted">ยังไม่มียาที่บันทึก</p>';
- const visibleLabs=db.labs.filter(l=>l.importStatus!=='needs-review'&&l.importStatus!=='rejected'); const quarantinedLabs=db.labs.length-visibleLabs.length; id('labList').innerHTML=(visibleLabs.length?visibleLabs.slice().reverse().map(l=>`<div class="item"><div><strong>${l.name}: ${l.value} ${l.unit||''}</strong><small>${l.date}${l.range?' • '+l.range:''}</small></div><button class="delete" onclick="delLab(${l.id})">ลบ</button></div>`).join(''):'<p class="muted">ยังไม่มีผลตรวจที่ยืนยันแล้ว</p>')+(quarantinedLabs?`<p class="muted">กักกันข้อมูลนำเข้าที่ไม่น่าเชื่อถือ ${quarantinedLabs} รายการ — ไม่ใช้ในการวิเคราะห์/Doctor Report</p>`:'');
- renderAlerts();renderTodayMeds();renderProfile();renderReport();renderDoctor();
-}
-function renderReport(){
- const bp=db.bp.filter(x=>withinDays(x.date,reportDays)), wt=db.weights.filter(x=>withinDays(x.date,reportDays)), acts=db.activities.filter(x=>withinDays(x.date,reportDays));
- id('avgSys').textContent=bp.length?mean(bp.map(x=>x.sys)).toFixed(1):'—';id('avgDia').textContent=bp.length?mean(bp.map(x=>x.dia)).toFixed(1):'—';
- id('weightChange').textContent=wt.length>1?(wt.at(-1).value-wt[0].value).toFixed(1)+' kg':'—';id('activityTotal').textContent=acts.reduce((s,x)=>s+x.minutes,0)+' นาที';
- const logs=[...db.bp.map(x=>({date:x.date,text:`BP ${x.sys}/${x.dia}${x.pulse?' • pulse '+x.pulse:''}`})),...db.weights.map(x=>({date:x.date,text:`Weight ${x.value} kg`})),...db.activities.map(x=>({date:x.date,text:`${x.type} ${x.minutes} นาที${x.note?' • '+x.note:''}`}))].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,16);
- id('recentLog').innerHTML=logs.map(x=>`<div class="item"><div><strong>${x.text}</strong><small>${fmtDate(x.date)}</small></div></div>`).join('');
-}
-function drawLine(canvas,items,keys,colors){
- const c=id(canvas),ctx=c.getContext('2d'),W=c.width,H=c.height,p=35;ctx.clearRect(0,0,W,H);ctx.strokeStyle='#dbe5e5';ctx.lineWidth=1;
- for(let i=0;i<5;i++){let y=p+(H-2*p)*i/4;ctx.beginPath();ctx.moveTo(p,y);ctx.lineTo(W-p,y);ctx.stroke()}
- if(!items.length){ctx.fillStyle='#789';ctx.font='18px sans-serif';ctx.fillText('ยังไม่มีข้อมูล',p,H/2);return}
- let vals=items.flatMap(x=>keys.map(k=>+x[k])).filter(Number.isFinite),min=Math.min(...vals),max=Math.max(...vals);if(min===max){min-=1;max+=1}
- keys.forEach((k,ki)=>{ctx.strokeStyle=colors[ki];ctx.lineWidth=3;ctx.beginPath();items.forEach((x,i)=>{let xx=p+(W-2*p)*(items.length===1?.5:i/(items.length-1)),yy=H-p-(x[k]-min)/(max-min)*(H-2*p);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)});ctx.stroke()})
-}
-function drawCharts(){drawLine('bpChart',db.bp.filter(x=>withinDays(x.date,reportDays)),['sys','dia'],['#0f766e','#e0962d']);drawLine('weightChart',db.weights.filter(x=>withinDays(x.date,reportDays)),['value'],['#386cb0'])}
-function renderDoctor(){
- const p=db.profile,lastW=db.weights.at(-1),bp30=db.bp.filter(x=>withinDays(x.date,30)),avgS=mean(bp30.map(x=>x.sys)),avgD=mean(bp30.map(x=>x.dia));
- const meds=db.meds.filter(x=>x.active),labs=db.labs.filter(l=>l.importStatus!=='needs-review'&&l.importStatus!=='rejected').slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,12);
- id('doctorReport').innerHTML=`
- <h3>Profile</h3><p><strong>Height:</strong> ${p.height||'—'} cm &nbsp; <strong>Latest weight:</strong> ${lastW?lastW.value.toFixed(1)+' kg':'—'} &nbsp; <strong>BMI:</strong> ${lastW?bmi(lastW.value,p.height).toFixed(1):'—'}</p>
- <p><strong>Conditions / limitations:</strong> ${p.conditions||'Not recorded'}<br><strong>Drug allergies:</strong> ${p.allergies||'Not recorded'}</p>
- <h3>Blood pressure — last 30 days</h3><p>${bp30.length?`${bp30.length} readings • Average ${avgS.toFixed(1)}/${avgD.toFixed(1)} mmHg`:'No readings recorded.'}</p>
- <table class="doctor-table"><tr><th>Date</th><th>BP</th><th>Pulse</th><th>Note</th></tr>${bp30.slice(-10).reverse().map(x=>`<tr><td>${fmtDate(x.date)}</td><td>${x.sys}/${x.dia}</td><td>${x.pulse||'—'}</td><td>${x.note||''}</td></tr>`).join('')}</table>
- <h3>Current medication list</h3>${meds.length?`<table class="doctor-table"><tr><th>Medicine</th><th>Dose</th><th>Time</th><th>Note</th></tr>${meds.map(m=>`<tr><td>${m.name}</td><td>${m.dose}</td><td>${m.time}</td><td>${m.note||''}</td></tr>`).join('')}</table>`:'<p>No medication recorded.</p>'}
- <h3>Recent laboratory / health check results</h3>${labs.length?`<table class="doctor-table"><tr><th>Date</th><th>Test</th><th>Result</th><th>Reference / note</th></tr>${labs.map(l=>`<tr><td>${l.date}</td><td>${l.name}</td><td>${l.value} ${l.unit||''}</td><td>${l.range||''}</td></tr>`).join('')}</table>`:'<p>No laboratory results recorded.</p>'}
- <h3>Activity</h3><p>Recorded activity in last 7 days: <strong>${weekMinutes()} minutes</strong>. User-set weekly goal: ${p.weeklyGoal||0} minutes.</p>
- <p class="muted">Generated by Personal Healthcare v7.0 from user-entered data. This summary is not a diagnosis and does not replace the original laboratory report or clinician medication list.</p>`;
-}
-id('printBtn').onclick=()=>window.print();
-id('exportBtn').onclick=()=>{
- const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='personal-health-data-v7.0.json';a.click();URL.revokeObjectURL(a.href)
-};
+$$(".nav").forEach(b=>b.onclick=()=>go(b.dataset.view));
+$$("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
 
-// Lightweight in-app due check while page is open.
-setInterval(()=>{
- db.meds.filter(m=>m.active&&medAppliesToday(m)&&!medTakenToday(m)).forEach(m=>{
-   const [h,mi]=m.time.split(':').map(Number),due=new Date();due.setHours(h,mi,0,0);
-   const delta=(due-Date.now())/60000;
-   if(delta<=m.lead && delta>-1) notify(`${m.name} ${m.dose} เวลา ${m.time}`);
- });
-},60000);
-
-
-// ---------- v3 PWA / Backup / Trend Engine ----------
-let deferredPrompt=null;
-window.addEventListener('beforeinstallprompt',e=>{
-  e.preventDefault();deferredPrompt=e;id('installBtn').style.display='inline-block';
-});
-id('installBtn').onclick=async()=>{
-  if(!deferredPrompt){alert('หากปุ่มติดตั้งไม่ขึ้น ให้ใช้เมนู browser → Add to Home Screen / Install App');return}
-  deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; id('installBtn').style.display='none';
-};
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./sw.js?build='+encodeURIComponent(PH_BUILD_ID),{updateViaCache:'none'}).then(async reg=>{
-    try{await reg.update()}catch{}
-    if(id('swStatus'))id('swStatus').textContent='พร้อมใช้งาน • '+PH_BUILD_ID;
-  }).catch(()=>{if(id('swStatus'))id('swStatus').textContent='ลงทะเบียนไม่สำเร็จ'});
-}else if(id('swStatus')) id('swStatus').textContent='Browser ไม่รองรับ';
-
-async function phForceUpdate(){
-  try{
-    if('serviceWorker' in navigator){
-      const regs=await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r=>r.unregister()));
-    }
-    const keys=await caches.keys();
-    await Promise.all(keys.map(k=>caches.delete(k)));
-  }catch(e){console.warn('cache clear',e)}
-  const u=new URL(location.href);u.searchParams.set('build',PH_BUILD_ID);u.searchParams.set('_',Date.now());
-  location.replace(u.toString());
+function latest(type){return db.records.filter(r=>r.type===type).sort((a,b)=>new Date(b.date)-new Date(a.date))[0]}
+function renderDashboard(){
+  const w=latest("weight"),bp=latest("blood_pressure"),p=latest("pulse");
+  $("#kpiWeight").textContent=w?`${w.value} ${w.unit||"kg"}`:"—";
+  $("#kpiWeightDate").textContent=w?fmtDate(w.date):"ยังไม่มีข้อมูล";
+  $("#kpiBp").textContent=bp?`${bp.value}/${bp.value2}`:"—";
+  $("#kpiBpStatus").textContent=bp?bpAssessment(bp).label:"ยังไม่มีข้อมูล";
+  $("#kpiPulse").textContent=p?`${p.value} ${p.unit||"bpm"}`:"—";
+  $("#kpiPulseDate").textContent=p?fmtDate(p.date):"ยังไม่มีข้อมูล";
+  $("#kpiCount").textContent=db.records.length;
+  renderWeightChart(); renderBpChart(); renderFlags(); renderRecent();
 }
-
-async function phCheckBuild(){
-  const state=id('buildState'),bid=id('buildId'),bv=id('buildVersion');
-  if(bid)bid.textContent=PH_BUILD_ID;if(bv)bv.textContent='V'+PH_BUILD_VERSION;
-  try{
-    const r=await fetch('./build.json?_='+Date.now(),{cache:'no-store'});
-    const b=await r.json();
-    const ok=b.buildId===PH_BUILD_ID;
-    if(state){state.textContent=ok?'กำลังรันไฟล์ล่าสุด ✓':'พบไฟล์คนละ Build — กดล้างแคช';state.className=ok?'build-ok':'build-warn'}
-  }catch(e){if(state)state.textContent='Build local: '+PH_BUILD_ID}
+function bpAssessment(r){
+  const s=Number(r.value),d=Number(r.value2);
+  if(!Number.isFinite(s)||!Number.isFinite(d))return {level:"neutral",label:"ข้อมูลไม่ครบ"};
+  if(s>180||d>120)return {level:"danger",label:"สูงมาก — วัดซ้ำและประเมินอาการ"};
+  if(s>=135||d>=85)return {level:"warn",label:"สูงกว่าช่วงอ้างอิงที่บ้าน"};
+  return {level:"ok",label:"ต่ำกว่าเกณฑ์สูงที่บ้าน"};
 }
-window.addEventListener('DOMContentLoaded',()=>{if(id('forceUpdateBtn'))id('forceUpdateBtn').onclick=phForceUpdate;phCheckBuild()});
-
-function updateEnvStatus(){
-  if(id('onlineStatus')) id('onlineStatus').textContent=navigator.onLine?'ออนไลน์':'ออฟไลน์';
-  if(id('notificationStatus')) id('notificationStatus').textContent=('Notification' in window)?Notification.permission:'ไม่รองรับ';
-}
-window.addEventListener('online',updateEnvStatus);window.addEventListener('offline',updateEnvStatus);updateEnvStatus();
-
-function downloadJSON(obj,name){
- const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}),a=document.createElement('a');
- a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)
-}
-if(id('backupBtn')) id('backupBtn').onclick=()=>downloadJSON({
- app:'Personal Healthcare',version:62,exportedAt:new Date().toISOString(),schemaVersion:62,data:db
-},'personal-healthcare-v7.0-backup.json');
-
-if(id('importFile')) id('importFile').onchange=async e=>{
- const f=e.target.files?.[0]; if(!f)return;
- try{
-   const raw=JSON.parse(await f.text());
-   const incoming=raw.data||raw;
-   if(!incoming.profile||!Array.isArray(incoming.bp)||!Array.isArray(incoming.weights)) throw new Error('รูปแบบไม่ถูกต้อง');
-   db={...blank,...incoming,profile:{...blank.profile,...incoming.profile},medTaken:incoming.medTaken||[],checks:incoming.checks||{}};
-   localStorage.setItem(KEY,JSON.stringify(db)); alert('นำเข้าข้อมูลสำเร็จ'); location.reload();
- }catch(err){alert('นำเข้าไม่สำเร็จ: '+err.message)}
-};
-if(id('resetTodayBtn')) id('resetTodayBtn').onclick=()=>{db.checks={};save()};
-if(id('clearDataBtn')) id('clearDataBtn').onclick=()=>{
- if(confirm('ล้างข้อมูลสุขภาพทั้งหมดจากอุปกรณ์นี้? การกระทำนี้ย้อนกลับไม่ได้หากไม่มี Backup')){
-   localStorage.removeItem(KEY);location.reload();
- }
-};
-
-function linearSlope(points){
- if(points.length<2)return 0;
- const n=points.length,xm=(n-1)/2,ym=mean(points);
- let num=0,den=0;points.forEach((y,i)=>{num+=(i-xm)*(y-ym);den+=(i-xm)**2});return den?num/den:0
-}
-function trendFlags(){
- const flags=[];
- const bp7=db.bp.filter(x=>withinDays(x.date,7));
- const bp30=db.bp.filter(x=>withinDays(x.date,30));
- if(bp7.length>=3){
-   const avs=mean(bp7.map(x=>x.sys)),avd=mean(bp7.map(x=>x.dia));
-   if(avs>=135||avd>=85)flags.push({type:'warn',text:`ค่าเฉลี่ยความดัน 7 วัน ${avs.toFixed(0)}/${avd.toFixed(0)} mmHg อยู่เหนือเกณฑ์ที่ NHS ใช้พิจารณาว่าสูงเมื่อวัดที่บ้าน ควรติดตามต่อเนื่องและนำค่าเฉลี่ยไปคุยกับแพทย์`});
-   else flags.push({type:'ok',text:`ค่าเฉลี่ยความดัน 7 วัน ${avs.toFixed(0)}/${avd.toFixed(0)} mmHg ต่ำกว่าเกณฑ์ความดันสูงที่บ้าน 135/85`});
- }
- if(bp30.length>=5){
-   const ss=linearSlope(bp30.map(x=>x.sys));
-   if(ss>1.5)flags.push({type:'info',text:'แนวโน้ม SYS ในข้อมูล 30 วันกำลังเพิ่มขึ้น ควรดูค่าเฉลี่ยหลายวันร่วมกับวิธีวัด ไม่ใช้จุดเดียวตัดสิน'});
- }
- const wt30=db.weights.filter(x=>withinDays(x.date,30));
- if(wt30.length>=2){
-   const change=wt30.at(-1).value-wt30[0].value;
-   flags.push({type:'info',text:`น้ำหนักใน 30 วันเปลี่ยน ${change>=0?'+':''}${change.toFixed(1)} kg จากข้อมูลที่บันทึกไว้`});
- }
- const mins=weekMinutes(),goal=db.profile.weeklyGoal||150;
- flags.push({type:mins>=goal?'ok':'info',text:`กิจกรรม 7 วัน ${mins}/${goal} นาที (${goal?Math.min(100,Math.round(mins/goal*100)):0}% ของเป้าที่ตั้งไว้)`});
- const active=db.meds.filter(m=>m.active&&medAppliesToday(m));
- if(active.length){
-   const taken=active.filter(m=>medTakenToday(m)).length;
-   flags.push({type:taken===active.length?'ok':'info',text:`บันทึกการกินยาวันนี้ ${taken}/${active.length} รายการ`});
- }
- if(!flags.length)flags.push({type:'info',text:'ยังมีข้อมูลไม่พอสำหรับวิเคราะห์แนวโน้ม กรุณาบันทึกอย่างต่อเนื่อง'});
- return flags;
-}
-function renderTrendFlags(){
- const html=trendFlags().map(f=>`<div class="flag ${f.type}">${f.text}</div>`).join('');
- if(id('trendFlags'))id('trendFlags').innerHTML=html;
- if(id('reportFlags'))id('reportFlags').innerHTML=html;
-}
-const _oldRenderAll=renderAll;
-renderAll=function(){_oldRenderAll();renderTrendFlags();updateEnvStatus()};
-renderAll();
-
-// persist a daily snapshot for future cloud sync conflict handling
-function snapshotMeta(){
- localStorage.setItem('healthcare_v3_meta',JSON.stringify({updatedAt:new Date().toISOString(),schemaVersion:62,deviceId:localStorage.getItem('healthcare_device_id')||''}))
-}
-if(!localStorage.getItem('healthcare_device_id'))localStorage.setItem('healthcare_device_id',crypto?.randomUUID?crypto.randomUUID():'dev-'+Date.now());
-window.addEventListener('beforeunload',snapshotMeta);
-
-
-// ---------- v4 Reminder Center / Quality / Sync Adapter ----------
-db.reminders={...blank.reminders,...(db.reminders||{})};
-db.sync={...blank.sync,...(db.sync||{})};
-db.profile={...blank.profile,...(db.profile||{})};
-
-function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-
-function renderIdentity(){
- if(id('profileName')) id('profileName').textContent=db.profile.displayName||'My Health';
- if(id('profileMeta')) id('profileMeta').textContent=db.profile.syncEmail?db.profile.syncEmail:'Local profile';
- if(id('syncState')) id('syncState').textContent=db.sync.mode==='local'?'Local only':'Sync enabled';
- if(id('displayName')) id('displayName').value=db.profile.displayName||'My Health';
- if(id('syncEmail')) id('syncEmail').value=db.profile.syncEmail||'';
- if(id('cloudMode')) id('cloudMode').textContent=db.sync.mode==='local'?'Local adapter':'Remote adapter';
-}
-if(id('identityForm')) id('identityForm').onsubmit=e=>{
- e.preventDefault();db.profile.displayName=id('displayName').value.trim()||'My Health';db.profile.syncEmail=id('syncEmail').value.trim();save();
-};
-
-function reminderQueue(){
- const out=[], now=new Date(), p=db.profile, r=db.reminders;
- db.meds.filter(m=>m.active&&medAppliesToday(m)&&!medTakenToday(m)).forEach(m=>{
-   const [h,mi]=m.time.split(':').map(Number),d=new Date();d.setHours(h,mi,0,0);
-   out.push({type:'ยา',text:`${m.name} ${m.dose}`,when:m.time,priority:d<now?'high':'normal'});
- });
- if(p.bpReminderEnabled){
-   for(const [label,t] of [['วัดความดันเช้า',p.bpMorningTime],['วัดความดันเย็น',p.bpEveningTime]]){
-     const [h,mi]=t.split(':').map(Number),d=new Date();d.setHours(h,mi,0,0);
-     const hasToday=db.bp.some(x=>sameDay(x.date)&&x.period.includes(label.includes('เช้า')?'เช้า':'เย็น'));
-     if(!hasToday) out.push({type:'ความดัน',text:label,when:t,priority:d<now?'high':'normal'});
-   }
- }
- const lastW=db.weights.at(-1);
- if(r.weightEnabled&&lastW){
-   const days=(Date.now()-new Date(lastW.date))/86400000;
-   if(days>=p.weightFreq) out.push({type:'น้ำหนัก',text:'ถึงรอบชั่งน้ำหนัก',when:r.weightTime,priority:'normal'});
- }
- if(r.activityEnabled&&todayMinutes()===0) out.push({type:'กิจกรรม',text:'ยังไม่มีกิจกรรมที่บันทึกวันนี้',when:r.activityTime,priority:'normal'});
- return out.sort((a,b)=>(a.when||'99:99').localeCompare(b.when||'99:99'));
-}
-
-function renderReminderCenter(){
- const q=reminderQueue(), meds=q.filter(x=>x.type==='ยา').length, bp=q.filter(x=>x.type==='ความดัน').length;
- if(id('reminderSummary')) id('reminderSummary').innerHTML=`
-   <div class="card stat"><span>รอเตือนทั้งหมด</span><strong>${q.length}</strong><small>รายการ</small></div>
-   <div class="card stat"><span>ยา</span><strong>${meds}</strong><small>ยังไม่บันทึกว่ากิน</small></div>
-   <div class="card stat"><span>ความดัน</span><strong>${bp}</strong><small>ตามตารางวันนี้</small></div>
-   <div class="card stat"><span>กิจกรรมวันนี้</span><strong>${todayMinutes()} นาที</strong><small>บันทึกแล้ว</small></div>`;
- if(id('reminderQueue')) id('reminderQueue').innerHTML=q.length?q.map(x=>`<div class="queue-item"><div><strong>${esc(x.type)} • ${esc(x.text)}</strong><div class="when">${esc(x.when||'วันนี้')}</div></div><span class="pill">${x.priority==='high'?'ควรตรวจตอนนี้':'รอตามเวลา'}</span></div>`).join(''):'<p class="muted">ไม่มีรายการค้างตามการตั้งค่าปัจจุบัน</p>';
- if(id('medReminderEnabled')) id('medReminderEnabled').checked=!!db.reminders.medEnabled;
- if(id('weightReminderEnabled')) id('weightReminderEnabled').checked=!!db.reminders.weightEnabled;
- if(id('weightReminderTime')) id('weightReminderTime').value=db.reminders.weightTime||'08:00';
- if(id('activityReminderEnabled')) id('activityReminderEnabled').checked=!!db.reminders.activityEnabled;
- if(id('activityReminderTime')) id('activityReminderTime').value=db.reminders.activityTime||'18:00';
-}
-if(id('reminderForm')) id('reminderForm').onsubmit=e=>{
- e.preventDefault();db.reminders={...db.reminders,medEnabled:id('medReminderEnabled').checked,weightEnabled:id('weightReminderEnabled').checked,weightTime:id('weightReminderTime').value,activityEnabled:id('activityReminderEnabled').checked,activityTime:id('activityReminderTime').value};save()
-};
-if(id('runReminderCheckBtn')) id('runReminderCheckBtn').onclick=()=>{
- const q=reminderQueue(); if(q.length) notify(`มี ${q.length} รายการที่ควรตรวจใน Reminder Center`); renderReminderCenter();
-};
-
-function qualityScan(){
- const issues=[];
- const lastW=db.weights.at(-1);
- if(!db.profile.height) issues.push({level:'high',text:'ยังไม่มีส่วนสูง ทำให้คำนวณ BMI ไม่ได้'});
- if(!lastW) issues.push({level:'medium',text:'ยังไม่มีน้ำหนักล่าสุด'});
- if(!db.bp.length) issues.push({level:'medium',text:'ยังไม่มีข้อมูลความดัน'});
- if(!db.labs.length) issues.push({level:'low',text:'ยังไม่มีผลตรวจสุขภาพในระบบ'});
- if(db.profile.conditions && db.profile.conditions.length<3) issues.push({level:'low',text:'ข้อมูลโรคประจำตัว/ข้อจำกัดสั้นมาก ควรตรวจว่ากรอกครบหรือไม่'});
- const badBP=db.bp.filter(x=>x.sys<=x.dia || x.sys<60 || x.sys>260 || x.dia<30 || x.dia>160);
- if(badBP.length) issues.push({level:'high',text:`พบข้อมูลความดัน ${badBP.length} รายการที่อาจผิดรูปแบบหรือไม่สมเหตุผล`});
- const dupBP=db.bp.filter((x,i,a)=>a.findIndex(y=>y.date===x.date&&y.sys===x.sys&&y.dia===x.dia)!==i);
- if(dupBP.length) issues.push({level:'medium',text:`พบความดันซ้ำ ${dupBP.length} รายการ`});
- const badWt=db.weights.filter(x=>x.value<30||x.value>250);
- if(badWt.length) issues.push({level:'high',text:`พบน้ำหนัก ${badWt.length} รายการนอกช่วงตรวจสอบของแอป`});
- const medsMissing=db.meds.filter(m=>!m.name||!m.dose||!m.time);
- if(medsMissing.length) issues.push({level:'high',text:`มียา ${medsMissing.length} รายการที่ข้อมูลชื่อ/ขนาด/เวลาไม่ครบ`});
- const labMissing=db.labs.filter(l=>!l.name||!l.value||!l.date);
- if(labMissing.length) issues.push({level:'medium',text:`มีผลตรวจ ${labMissing.length} รายการที่ข้อมูลไม่ครบ`});
- const quarantined=db.labs.filter(l=>l.importStatus==='needs-review'||l.importStatus==='rejected');
- if(quarantined.length) issues.push({level:'medium',text:`กักกันผลตรวจจาก OCR ${quarantined.length} รายการ และไม่นำไปใช้วิเคราะห์จนกว่าจะยืนยันใหม่`});
- let score=100-issues.reduce((s,x)=>s+(x.level==='high'?20:x.level==='medium'?10:5),0);score=Math.max(0,score);
- return {issues,score};
-}
-function renderQuality(){
- const r=qualityScan();
- if(id('qualityScoreWrap')) id('qualityScoreWrap').innerHTML=`<div class="quality-score"><div class="quality-num">${r.score}</div><div><strong>Data Quality Score</strong><p class="muted">${r.score>=85?'ข้อมูลพร้อมใช้วิเคราะห์ในระดับดี':r.score>=65?'ควรแก้บางรายการก่อนดูแนวโน้มระยะยาว':'ควรตรวจข้อมูลหลายรายการก่อนใช้อ้างอิง'}</p></div></div>`;
- if(id('qualityIssues')) id('qualityIssues').innerHTML=r.issues.length?r.issues.map(x=>`<div class="issue ${x.level}">${esc(x.text)}</div>`).join(''):'<div class="flag ok">ไม่พบปัญหาคุณภาพข้อมูลตามกฎที่ตั้งไว้</div>';
-}
-if(id('scanQualityBtn')) id('scanQualityBtn').onclick=renderQuality;
-
-// CSV format: name,value,unit,date,range
-if(id('labCsvFile')) id('labCsvFile').onchange=async e=>{
- const f=e.target.files?.[0]; if(!f)return;
- try{
-   const text=await f.text(), lines=text.trim().split(/\r?\n/); if(lines.length<2)throw new Error('CSV ไม่มีข้อมูล');
-   const head=lines[0].split(',').map(x=>x.trim().toLowerCase());
-   const req=['name','value','date']; if(!req.every(x=>head.includes(x)))throw new Error('ต้องมีคอลัมน์ name,value,date');
-   const idx=o=>head.indexOf(o);
-   let added=0;
-   for(const line of lines.slice(1)){
-     const c=line.split(',').map(x=>x.trim().replace(/^"|"$/g,''));
-     if(!c[idx('name')]||!c[idx('value')]||!c[idx('date')])continue;
-     db.labs.push({id:Date.now()+added,name:c[idx('name')],value:c[idx('value')],unit:idx('unit')>=0?c[idx('unit')]:'',date:c[idx('date')],range:idx('range')>=0?c[idx('range')]:''});added++;
-   }
-   save();alert(`นำเข้า Lab CSV สำเร็จ ${added} รายการ`);
- }catch(err){alert('นำเข้า CSV ไม่สำเร็จ: '+err.message)}
-};
-
-// backend adapter scaffold
-window.HealthCloudAdapter={
- async push(payload){ throw new Error('No remote backend configured'); },
- async pull(){ throw new Error('No remote backend configured'); },
- async sync(){
-   return {mode:'local',message:'Cloud adapter พร้อม แต่ยังไม่ได้ตั้งค่า backend'};
- }
-};
-
-const __renderAllV4=renderAll;
-renderAll=function(){__renderAllV4();renderIdentity();renderReminderCenter();renderQuality()};
-renderAll();
-
-
-// ---------- v5 Supabase Cloud Sync ----------
-const CLOUD_CFG_KEY='healthcare_v5_supabase_config';
-let sb=null, sbSession=null;
-
-function nowIso(){return new Date().toISOString()}
-function logSync(type,message){
-  db.sync.history=db.sync.history||[];
-  db.sync.history.unshift({date:nowIso(),type,message});
-  db.sync.history=db.sync.history.slice(0,30);
-  localStorage.setItem(KEY,JSON.stringify(db));
-  renderSyncHistory();
-}
-function localUpdatedAt(){
-  const meta=JSON.parse(localStorage.getItem('healthcare_v3_meta')||'{}');
-  return meta.updatedAt||db.sync.lastSyncedLocalUpdatedAt||new Date(0).toISOString();
-}
-function markLocalUpdated(){
-  localStorage.setItem('healthcare_v3_meta',JSON.stringify({
-    updatedAt:nowIso(),schemaVersion:62,deviceId:localStorage.getItem('healthcare_device_id')||''
-  }));
-}
-const originalSaveV5=save;
-save=function(){markLocalUpdated();originalSaveV5()};
-
-function getCloudConfig(){
-  try{return JSON.parse(localStorage.getItem(CLOUD_CFG_KEY)||'null')}catch{return null}
-}
-function setCloudConfig(cfg,remember=true){
-  if(remember)localStorage.setItem(CLOUD_CFG_KEY,JSON.stringify(cfg));
-  else sessionStorage.setItem(CLOUD_CFG_KEY,JSON.stringify(cfg));
-}
-function effectiveCloudConfig(){
-  try{return JSON.parse(sessionStorage.getItem(CLOUD_CFG_KEY)||'null')||getCloudConfig()}catch{return null}
-}
-async function initSupabase(){
-  const cfg=effectiveCloudConfig();
-  if(!cfg?.url||!cfg?.key||!window.supabase?.createClient){
-    sb=null; renderCloudState(); return false;
+function renderFlags(){
+  const out=[]; const bp=latest("blood_pressure");
+  if(bp){
+    const a=bpAssessment(bp);
+    if(a.level==="danger")out.push({level:"danger",title:"ความดันล่าสุดสูงมาก",text:`${bp.value}/${bp.value2} mmHg — หากวัดซ้ำแล้วยัง >180/120 และมีอาการ เช่น เจ็บหน้าอก หายใจลำบาก อ่อนแรง การมองเห็นหรือการพูดผิดปกติ ให้ขอความช่วยเหลือฉุกเฉินทันที`});
+    else if(a.level==="warn")out.push({level:"warn",title:"ติดตามความดัน",text:`ค่าล่าสุด ${bp.value}/${bp.value2} mmHg อยู่ตั้งแต่เกณฑ์ที่ NHS ใช้พิจารณาว่าความดันที่บ้านสูง (135/85) ควรติดตามค่าเฉลี่ยและคุยกับบุคลากรสุขภาพหากยังสูง`});
   }
-  try{
-    sb=window.supabase.createClient(cfg.url,cfg.key,{
-      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}
-    });
-    const {data,error}=await sb.auth.getSession();
-    if(error)throw error;
-    sbSession=data.session||null;
-    sb.auth.onAuthStateChange((_event,session)=>{sbSession=session;renderCloudState()});
-    renderCloudState();
-    return true;
-  }catch(err){
-    sb=null; logSync('error','Cloud init: '+err.message);renderCloudState();return false;
+  const weights=db.records.filter(r=>r.type==="weight").sort((a,b)=>new Date(a.date)-new Date(b.date));
+  if(weights.length>=2){
+    const delta=Number(weights.at(-1).value)-Number(weights[0].value);
+    out.push({level:"ok",title:"แนวโน้มน้ำหนัก",text:`จากข้อมูลที่มี เปลี่ยนแปลง ${delta>0?"+":""}${delta.toFixed(1)} kg`});
   }
+  if(!out.length)out.push({level:"ok",title:"ยังไม่มีธงเตือน",text:"เพิ่มข้อมูลความดัน น้ำหนัก และผลตรวจเพื่อให้ Dashboard วิเคราะห์แนวโน้มได้มากขึ้น"});
+  $("#healthFlags").innerHTML=out.map(x=>`<div class="item flag ${x.level}"><span class="flag-dot"></span><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small></div></div>`).join("");
 }
+function renderRecent(){
+  const a=[...db.records].sort((x,y)=>new Date(y.date)-new Date(x.date)).slice(0,5);
+  $("#recentRecords").innerHTML=a.length?a.map(r=>`<div class="item"><strong>${typeLabel(r.type)} • ${recordVal(r)} ${esc(r.unit||"")}</strong><small>${fmtDate(r.date)} ${r.note?`• ${esc(r.note)}`:""}</small></div>`).join(""):`<div class="item"><small>ยังไม่มีข้อมูล</small></div>`;
+}
+function chartSvg(rows, mode){
+  if(rows.length<2)return "ยังไม่มีข้อมูลเพียงพอ";
+  const W=640,H=230,pad={l:38,r:18,t:18,b:28}, iw=W-pad.l-pad.r,ih=H-pad.t-pad.b;
+  const vals=mode==="weight"?rows.map(r=>Number(r.value)):rows.flatMap(r=>[Number(r.value),Number(r.value2)]).filter(Number.isFinite);
+  let min=Math.min(...vals),max=Math.max(...vals); if(min===max){min-=1;max+=1}
+  const extra=(max-min)*.15;min-=extra;max+=extra;
+  const x=i=>pad.l+(rows.length===1?iw/2:i*iw/(rows.length-1));
+  const y=v=>pad.t+(max-v)*ih/(max-min);
+  const line=arr=>arr.map((v,i)=>`${x(i)},${y(v)}`).join(" ");
+  const grid=[0,.25,.5,.75,1].map(f=>{const yy=pad.t+ih*f,val=max-(max-min)*f;return `<line class="axis" x1="${pad.l}" y1="${yy}" x2="${W-pad.r}" y2="${yy}"/><text class="chart-label" x="2" y="${yy+3}">${val.toFixed(0)}</text>`}).join("");
+  const labels=rows.map((r,i)=> i===0||i===rows.length-1||i===Math.floor(rows.length/2)?`<text class="chart-label" x="${x(i)-14}" y="${H-8}">${new Date(r.date).toLocaleDateString("th-TH",{day:"numeric",month:"short"})}</text>`:"").join("");
+  if(mode==="weight"){
+    const a=rows.map(r=>Number(r.value));
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}">${grid}<polyline class="line-weight" points="${line(a)}"/>${a.map((v,i)=>`<circle class="dot-w" cx="${x(i)}" cy="${y(v)}" r="4"/>`).join("")}${labels}</svg>`;
+  }
+  const s=rows.map(r=>Number(r.value)),d=rows.map(r=>Number(r.value2));
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}">${grid}<polyline class="line-sys" points="${line(s)}"/><polyline class="line-dia" points="${line(d)}"/>${s.map((v,i)=>`<circle class="dot-s" cx="${x(i)}" cy="${y(v)}" r="4"/>`).join("")}${d.map((v,i)=>`<circle class="dot-d" cx="${x(i)}" cy="${y(v)}" r="4"/>`).join("")}${labels}</svg>`;
+}
+function renderWeightChart(){const a=db.records.filter(r=>r.type==="weight"&&Number.isFinite(Number(r.value))).sort((x,y)=>new Date(x.date)-new Date(y.date)).slice(-12);$("#weightChart").innerHTML=chartSvg(a,"weight")}
+function renderBpChart(){const a=db.records.filter(r=>r.type==="blood_pressure"&&Number.isFinite(Number(r.value))&&Number.isFinite(Number(r.value2))).sort((x,y)=>new Date(x.date)-new Date(y.date)).slice(-12);$("#bpChart").innerHTML=chartSvg(a,"bp")}
 
-async function sendMagicLink(email){
-  if(!sb)throw new Error('กรุณาตั้งค่า Supabase ก่อน');
-  const {error}=await sb.auth.signInWithOtp({
-    email,
-    options:{emailRedirectTo:window.location.href.split('#')[0]}
-  });
-  if(error)throw error;
+function renderRecords(){
+  const q=$("#recordSearch")?.value?.trim().toLowerCase()||"";
+  let a=[...db.records].sort((x,y)=>new Date(y.date)-new Date(x.date));
+  if(q)a=a.filter(r=>[typeLabel(r.type),r.type,r.note,r.unit,r.value,r.value2].join(" ").toLowerCase().includes(q));
+  $("#recordsBody").innerHTML=a.length?a.map(r=>`<tr><td>${fmtDate(r.date)}</td><td>${typeLabel(r.type)}</td><td>${recordVal(r)}</td><td>${esc(r.unit||"")}</td><td>${esc(r.note||"")}</td><td><button class="btn mini edit-rec" data-id="${r.id}">แก้</button> <button class="btn mini del-rec" data-id="${r.id}">ลบ</button></td></tr>`).join(""):`<tr><td colspan="6" class="muted">ยังไม่มีข้อมูล</td></tr>`;
+  $$(".edit-rec").forEach(b=>b.onclick=()=>openRecord(b.dataset.id));
+  $$(".del-rec").forEach(b=>b.onclick=()=>{if(confirm("ลบรายการนี้?")){db.records=db.records.filter(r=>r.id!==b.dataset.id);save()}});
 }
-async function signOutCloud(){
-  if(!sb)return; const {error}=await sb.auth.signOut(); if(error)throw error; sbSession=null;renderCloudState()
+$("#recordSearch").oninput=renderRecords;
+$("#addRecordBtn").onclick=()=>openRecord();
+function openRecord(id){
+  const r=id?db.records.find(x=>x.id===id):null;
+  $("#recordDialogTitle").textContent=r?"แก้ไขข้อมูลสุขภาพ":"เพิ่มข้อมูลสุขภาพ";
+  $("#recordId").value=r?.id||"";
+  const local=new Date();local.setMinutes(local.getMinutes()-local.getTimezoneOffset());
+  $("#recordDate").value=r?.date?toLocalInput(r.date):local.toISOString().slice(0,16);
+  $("#recordType").value=r?.type||"weight";$("#recordValue").value=r?.value??"";$("#recordValue2").value=r?.value2??"";$("#recordUnit").value=r?.unit||guessUnit(r?.type||"weight");$("#recordNote").value=r?.note||"";
+  $("#recordDialog").showModal();
 }
-function cloudRowPayload(){
-  if(!sbSession?.user)throw new Error('ยังไม่ได้ Sign in');
+function toLocalInput(v){const d=new Date(v);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)}
+$("#recordType").onchange=()=>{if(!$("#recordUnit").value)$("#recordUnit").value=guessUnit($("#recordType").value)}
+$("#recordForm").onsubmit=e=>{
+  e.preventDefault();
+  const id=$("#recordId").value||uid(), old=db.records.find(r=>r.id===id);
+  const rec={id,date:new Date($("#recordDate").value).toISOString(),type:$("#recordType").value,value:numOrText($("#recordValue").value),value2:numOrText($("#recordValue2").value),unit:$("#recordUnit").value.trim(),note:$("#recordNote").value.trim(),created_at:old?.created_at||new Date().toISOString(),updated_at:new Date().toISOString()};
+  if(old)db.records=db.records.map(r=>r.id===id?rec:r); else db.records.push(rec);
+  save();$("#recordDialog").close();
+}
+function numOrText(v){if(v==="")return null;const n=Number(v);return Number.isFinite(n)?n:v}
+
+function parseCSV(text){
+  const rows=[];let row=[],field="",q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i],n=text[i+1];
+    if(c==='"'&&q&&n==='"'){field+='"';i++}
+    else if(c==='"'){q=!q}
+    else if(c===','&&!q){row.push(field);field=""}
+    else if((c==="\n"||c==="\r")&&!q){if(c==="\r"&&n==="\n")i++;row.push(field);field="";if(row.some(x=>x!==""))rows.push(row);row=[]}
+    else field+=c;
+  }
+  row.push(field);if(row.some(x=>x!==""))rows.push(row);
+  if(!rows.length)return {headers:[],rows:[]};
+  const headers=rows[0].map((h,i)=>h.trim()||`column_${i+1}`);
+  return {headers,rows:rows.slice(1).map(a=>Object.fromEntries(headers.map((h,i)=>[h,a[i]??""])))}
+}
+function normalizeJson(x){
+  const arr=Array.isArray(x)?x:(Array.isArray(x.records)?x.records:[x]);
+  const headers=[...new Set(arr.flatMap(o=>Object.keys(o||{})))];
+  return {headers,rows:arr.map(o=>Object.fromEntries(headers.map(h=>[h,o?.[h]??""])))}
+}
+function autoMap(headers){
+  const find=(...names)=>headers.find(h=>names.some(n=>h.toLowerCase().replace(/[\s_-]/g,"").includes(n)))||"";
   return {
-    user_id:sbSession.user.id,
-    payload:db,
-    schema_version:622,
-    revision:(db.sync.revision||0)+1,
-    device_id:localStorage.getItem('healthcare_device_id')||null,
-    client_updated_at:localUpdatedAt(),
-    updated_at:nowIso()
-  };
-}
-async function fetchCloudRow(){
-  if(!sbSession?.user)throw new Error('ยังไม่ได้ Sign in');
-  const {data,error}=await sb.from('health_snapshots').select('*').eq('user_id',sbSession.user.id).maybeSingle();
-  if(error)throw error;
-  return data||null;
-}
-async function pushCloud(force=false){
-  if(!sbSession?.user)throw new Error('ยังไม่ได้ Sign in');
-  const cloud=await fetchCloudRow();
-  if(cloud&&!force){
-    const cloudChanged=db.sync.lastCloudUpdatedAt && new Date(cloud.updated_at)>new Date(db.sync.lastCloudUpdatedAt);
-    const localChanged=db.sync.lastSyncedLocalUpdatedAt && new Date(localUpdatedAt())>new Date(db.sync.lastSyncedLocalUpdatedAt);
-    if(cloudChanged&&localChanged)throw Object.assign(new Error('SYNC_CONFLICT'),{code:'SYNC_CONFLICT',cloud});
+    date:find("date","datetime","time","วันที่"),
+    type:find("type","category","metric","ประเภท"),
+    value:find("systolic","value","result","ค่า"),
+    value2:find("diastolic","value2","secondary","ค่าล่าง"),
+    unit:find("unit","หน่วย"),
+    note:find("note","remark","comment","หมายเหตุ")
   }
-  const row=cloudRowPayload();
-  const {data,error}=await sb.from('health_snapshots').upsert(row,{onConflict:'user_id'}).select().single();
-  if(error)throw error;
-  db.sync.mode='supabase';
-  db.sync.lastSyncAt=nowIso();
-  db.sync.lastCloudUpdatedAt=data.updated_at;
-  db.sync.lastSyncedLocalUpdatedAt=localUpdatedAt();
-  db.sync.revision=data.revision||row.revision;
-  localStorage.setItem(KEY,JSON.stringify(db));
-  logSync('ok','Upload สำเร็จ • revision '+db.sync.revision);
-  renderCloudState();
-  return data;
 }
-async function pullCloud(force=false){
-  if(!sbSession?.user)throw new Error('ยังไม่ได้ Sign in');
-  const cloud=await fetchCloudRow();
-  if(!cloud){logSync('ok','Cloud ยังไม่มีข้อมูล');return null}
-  if(!force){
-    const cloudChanged=db.sync.lastCloudUpdatedAt && new Date(cloud.updated_at)>new Date(db.sync.lastCloudUpdatedAt);
-    const localChanged=db.sync.lastSyncedLocalUpdatedAt && new Date(localUpdatedAt())>new Date(db.sync.lastSyncedLocalUpdatedAt);
-    if(cloudChanged&&localChanged)throw Object.assign(new Error('SYNC_CONFLICT'),{code:'SYNC_CONFLICT',cloud});
+function setImportData(parsed,sourceName="pasted data"){
+  importState.raw=parsed.rows.map((r,i)=>({...r,__row:i+2,__source:sourceName}));
+  importState.headers=parsed.headers; setupMapping(); renderPreview(); setImportStep(2);
+}
+function setupMapping(){
+  const map=autoMap(importState.headers), ids={mapDate:"date",mapType:"type",mapValue:"value",mapValue2:"value2",mapUnit:"unit",mapNote:"note"};
+  Object.entries(ids).forEach(([id,key])=>{
+    const sel=$("#"+id);sel.innerHTML=`<option value="">— ไม่ใช้ —</option>`+importState.headers.map(h=>`<option value="${esc(h)}">${esc(h)}</option>`).join("");sel.value=map[key]||"";
+    sel.onchange=renderPreview;
+  });
+}
+function mapping(){return {date:$("#mapDate").value,type:$("#mapType").value,value:$("#mapValue").value,value2:$("#mapValue2").value,unit:$("#mapUnit").value,note:$("#mapNote").value}}
+function normalizeType(v){
+  const s=String(v||"").trim().toLowerCase().replace(/\s+/g,"_");
+  if(["bp","bloodpressure","blood_pressure","ความดัน","ความดันโลหิต"].includes(s))return "blood_pressure";
+  if(["weight","น้ำหนัก"].includes(s))return "weight";
+  if(["pulse","heart_rate","heartrate","ชีพจร"].includes(s))return "pulse";
+  if(["glucose","blood_sugar","น้ำตาล"].includes(s))return "glucose";
+  if(["exercise","ออกกำลังกาย"].includes(s))return "exercise";
+  if(["note","บันทึก"].includes(s))return "note";
+  if(["lab","labs","ผลแล็บ","ผลตรวจ"].includes(s))return "lab";
+  return s||"lab";
+}
+function mappedRecords(){
+  const m=mapping();
+  return importState.raw.map((r,i)=>{
+    const dateRaw=m.date?r[m.date]:"",typeRaw=m.type?r[m.type]:"";
+    let date=dateRaw?new Date(dateRaw):new Date();
+    if(isNaN(date))date=null;
+    const type=normalizeType(typeRaw);
+    const unit=(m.unit?r[m.unit]:"")||guessUnit(type);
+    return {id:uid(),date:date?.toISOString()||"",type,value:numOrText(m.value?r[m.value]:""),value2:numOrText(m.value2?r[m.value2]:""),unit:String(unit||"").trim(),note:String(m.note?r[m.note]:"").trim(),source:r.__source,source_row:r.__row};
+  });
+}
+function validateRec(r){
+  const errors=[];
+  if(!r.date)errors.push("วันที่ไม่ถูกต้อง");
+  if(!r.type)errors.push("ไม่มีประเภท");
+  if(["weight","blood_pressure","pulse","glucose"].includes(r.type)&&!Number.isFinite(Number(r.value)))errors.push("ค่า 1 ไม่ใช่ตัวเลข");
+  if(r.type==="blood_pressure"&&!Number.isFinite(Number(r.value2)))errors.push("ความดันต้องมีค่า 2");
+  return errors;
+}
+function signature(r){return [r.date?.slice(0,16),r.type,String(r.value),String(r.value2??""),r.unit].join("|")}
+function analyzeImport(){
+  const recs=mappedRecords(), existing=new Set(db.records.map(signature));
+  importState.valid=[];importState.invalid=[];importState.duplicates=[];
+  recs.forEach((r,i)=>{
+    const err=validateRec(r);
+    if(err.length)importState.invalid.push({r,i,err});
+    else if(existing.has(signature(r)))importState.duplicates.push({r,i});
+    else importState.valid.push({...r,created_at:new Date().toISOString(),updated_at:new Date().toISOString()});
+  });
+}
+function renderPreview(){
+  const recs=mappedRecords();
+  $("#importSummary").textContent=`${importState.raw.length} แถว • ${importState.headers.length} คอลัมน์`;
+  $("#previewHead").innerHTML="<tr><th>#</th><th>วันที่</th><th>ประเภท</th><th>ค่า 1</th><th>ค่า 2</th><th>หน่วย</th><th>หมายเหตุ</th><th>สถานะ</th></tr>";
+  $("#previewBody").innerHTML=recs.slice(0,200).map((r,i)=>{
+    const err=validateRec(r);
+    return `<tr data-i="${i}">
+      <td>${i+1}</td>
+      <td><input class="input mini-edit p-date" value="${esc(r.date?r.date.slice(0,16):"")}"></td>
+      <td><input class="input mini-edit p-type" value="${esc(r.type)}"></td>
+      <td><input class="input mini-edit p-v1" value="${esc(r.value??"")}"></td>
+      <td><input class="input mini-edit p-v2" value="${esc(r.value2??"")}"></td>
+      <td><input class="input mini-edit p-unit" value="${esc(r.unit)}"></td>
+      <td><input class="input mini-edit p-note" value="${esc(r.note)}"></td>
+      <td class="${err.length?"bad":"ok"}">${err.length?esc(err.join(", ")):"พร้อม"}</td>
+    </tr>`
+  }).join("");
+  $$("#previewBody tr").forEach(tr=>$$("input",tr).forEach(inp=>inp.onchange=()=>applyPreviewEdit(tr)));
+  analyzeImport();$("#validationStatus").textContent=`พร้อม ${importState.valid.length} • ต้องแก้ ${importState.invalid.length} • duplicate ${importState.duplicates.length}`;
+}
+function applyPreviewEdit(tr){
+  const i=Number(tr.dataset.i), raw=importState.raw[i], m=mapping();
+  const set=(key,cls)=>{if(m[key])raw[m[key]]=tr.querySelector(cls).value};
+  set("date",".p-date");set("type",".p-type");set("value",".p-v1");set("value2",".p-v2");set("unit",".p-unit");set("note",".p-note");
+  renderPreview();
+}
+function setImportStep(n){
+  $("#importStep1").hidden=n!==1;$("#importStep2").hidden=n!==2;$("#importStep3").hidden=n!==3;
+  $$(".step").forEach(s=>s.classList.toggle("active",Number(s.dataset.step)<=n));
+}
+$("#backImport").onclick=()=>setImportStep(1);$("#backToPreview").onclick=()=>setImportStep(2);
+$("#prepareSaveBtn").onclick=()=>{analyzeImport();$("#saveStats").innerHTML=`<div class="stat"><span>พร้อมบันทึก</span><b class="ok">${importState.valid.length}</b></div><div class="stat"><span>ข้อมูลไม่ครบ</span><b class="bad">${importState.invalid.length}</b></div><div class="stat"><span>Duplicate</span><b class="skip">${importState.duplicates.length}</b></div>`;$("#saveResult").innerHTML="";setImportStep(3)};
+$("#saveImportBtn").onclick=async()=>{
+  analyzeImport();
+  db.records.push(...importState.valid);save();
+  const cfg=getCfg();let syncMsg="";
+  if(cfg.url&&cfg.key&&importState.valid.length){
+    try{await supabaseInsert("health_records",importState.valid.map(r=>({id:r.id,recorded_at:r.date,type:r.type,value1:r.value,value2:r.value2,unit:r.unit,note:r.note,source:r.source})));syncMsg=" • Supabase sync สำเร็จ"}
+    catch(e){syncMsg=` • Local save สำเร็จ แต่ Supabase: ${e.message}`}
   }
-  const incoming=cloud.payload||{};
-  const preservedSync={...db.sync,mode:'supabase',lastSyncAt:nowIso(),lastCloudUpdatedAt:cloud.updated_at,lastSyncedLocalUpdatedAt:nowIso(),revision:cloud.revision||0,history:db.sync.history||[]};
-  db={...blank,...incoming,profile:{...blank.profile,...(incoming.profile||{})},reminders:{...blank.reminders,...(incoming.reminders||{})},sync:preservedSync};
-  localStorage.setItem(KEY,JSON.stringify(db));markLocalUpdated();
-  logSync('ok','Download สำเร็จ • revision '+db.sync.revision);
-  renderAll();renderCloudState();
-  return cloud;
+  $("#saveResult").innerHTML=`<div class="notice info"><strong>บันทึกแล้ว ${importState.valid.length} รายการ</strong>${esc(syncMsg)}<br>ข้าม ${importState.invalid.length} แถวที่ไม่ผ่าน และ ${importState.duplicates.length} duplicate</div>`;
+  importState={raw:[],headers:[],valid:[],invalid:[],duplicates:[]};
 }
-async function syncNow(){
-  const cloud=await fetchCloudRow();
-  if(!cloud)return pushCloud();
-  const cloudAt=new Date(cloud.updated_at||0), localAt=new Date(localUpdatedAt()||0), baseCloud=new Date(db.sync.lastCloudUpdatedAt||0), baseLocal=new Date(db.sync.lastSyncedLocalUpdatedAt||0);
-  const cloudChanged=cloudAt>baseCloud, localChanged=localAt>baseLocal;
-  if(cloudChanged&&localChanged)throw Object.assign(new Error('SYNC_CONFLICT'),{code:'SYNC_CONFLICT',cloud});
-  if(cloudChanged)return pullCloud(true);
-  return pushCloud(true);
+$("#fileInput").onchange=e=>handleFiles([...e.target.files]);
+["dragenter","dragover"].forEach(ev=>$("#dropzone").addEventListener(ev,e=>{e.preventDefault();e.currentTarget.style.borderColor="#0b6b57"}));
+["dragleave","drop"].forEach(ev=>$("#dropzone").addEventListener(ev,e=>{e.preventDefault();e.currentTarget.style.borderColor=""}));
+$("#dropzone").addEventListener("drop",e=>handleFiles([...e.dataTransfer.files]));
+async function handleFiles(files){
+  const dataFiles=files.filter(f=>/\.(csv|json)$/i.test(f.name)||["text/csv","application/json"].includes(f.type));
+  const docs=files.filter(f=>!dataFiles.includes(f));
+  docs.forEach(f=>db.documents.push({id:uid(),name:f.name,type:f.type||"file",size:f.size,date:new Date().toISOString(),note:"Imported to Document Inbox"}));
+  if(docs.length)save();
+  if(dataFiles.length){
+    const f=dataFiles[0],text=await f.text();
+    try{const parsed=/\.json$/i.test(f.name)||f.type==="application/json"?normalizeJson(JSON.parse(text)):parseCSV(text);setImportData(parsed,f.name)}
+    catch(e){alert("อ่านไฟล์ไม่ได้: "+e.message)}
+  } else if(docs.length){alert(`เพิ่มเอกสาร ${docs.length} ไฟล์ใน Document Inbox แล้ว`);go("files")}
 }
-function showConflict(err){
-  if(id('conflictBox'))id('conflictBox').innerHTML=`<div class="conflict"><strong>พบ Sync Conflict</strong><p>ข้อมูลบนอุปกรณ์และ Cloud ถูกแก้หลังการ sync ครั้งล่าสุด ระบบจึงไม่เขียนทับอัตโนมัติ</p><div class="sync-actions"><button class="secondary" onclick="resolveConflict('local')">ใช้อุปกรณ์นี้ → Cloud</button><button class="secondary" onclick="resolveConflict('cloud')">ใช้ Cloud → อุปกรณ์นี้</button></div></div>`;
+$("#pasteImportBtn").onclick=()=>$("#pasteDialog").showModal();
+$("#pasteForm").onsubmit=e=>{e.preventDefault();setImportData(parseCSV($("#pasteText").value),"pasted.csv");$("#pasteDialog").close()};
+$("#downloadTemplate").onclick=()=>downloadText("health-import-template.csv","date,type,value,value2,unit,note\n2026-08-11T08:00:00,blood_pressure,128,82,mmHg,morning\n2026-08-11T08:05:00,weight,80,,kg,\n");
+function downloadText(name,text,type="text/plain"){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+
+function renderMeds(){
+  $("#medList").innerHTML=db.medications.length?db.medications.map(m=>`<div class="item"><strong>${esc(m.name)}</strong><small>${esc(m.dose||"")} ${m.time?`• ${esc(m.time)}`:""} ${m.note?`• ${esc(m.note)}`:""}</small><div><button class="btn mini del-med" data-id="${m.id}">ลบ</button></div></div>`).join(""):`<div class="item"><small>ยังไม่มีรายการยา</small></div>`;
+  $("#reminderList").innerHTML=db.medications.filter(m=>m.time).length?db.medications.filter(m=>m.time).sort((a,b)=>a.time.localeCompare(b.time)).map(m=>`<div class="item"><strong>${esc(m.time)} • ${esc(m.name)}</strong><small>${esc(m.dose||"")}</small></div>`).join(""):`<div class="item"><small>ยังไม่มีเวลาเตือน</small></div>`;
+  $$(".del-med").forEach(b=>b.onclick=()=>{db.medications=db.medications.filter(m=>m.id!==b.dataset.id);save()});
 }
-window.resolveConflict=async choice=>{
- try{
-   if(choice==='local')await pushCloud(true);else await pullCloud(true);
-   if(id('conflictBox'))id('conflictBox').innerHTML='<div class="flag ok">แก้ conflict แล้ว</div>';
- }catch(e){alert(e.message)}
+$("#addMedBtn").onclick=()=>{$("#medForm").reset();$("#medDialog").showModal()};
+$("#medForm").onsubmit=e=>{e.preventDefault();db.medications.push({id:uid(),name:$("#medName").value.trim(),dose:$("#medDose").value.trim(),time:$("#medTime").value,note:$("#medNote").value.trim(),created_at:new Date().toISOString()});save();$("#medDialog").close()}
+
+function renderFiles(){
+  $("#fileList").innerHTML=db.documents.length?db.documents.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(f=>`<div class="file-card"><div class="file-type">${f.type.includes("pdf")?"PDF":"IMG"}</div><strong>${esc(f.name)}</strong><small>${Math.round(f.size/1024)} KB • ${fmtDate(f.date)}</small><p class="muted">${esc(f.note||"")}</p><button class="btn mini del-file" data-id="${f.id}">ลบรายการ</button></div>`).join(""):`<div class="item"><small>ยังไม่มีเอกสาร</small></div>`;
+  $$(".del-file").forEach(b=>b.onclick=()=>{db.documents=db.documents.filter(f=>f.id!==b.dataset.id);save()});
+}
+
+function exportData(){downloadText(`personal-healthcare-v8-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({version:"8.0",exported_at:new Date().toISOString(),...db},null,2),"application/json")}
+$("#exportBtn").onclick=exportData;$("#exportBtn2").onclick=exportData;
+$("#resetAll").onclick=()=>{if(confirm("ล้างข้อมูลทั้งหมดในเครื่อง? การกระทำนี้ย้อนกลับไม่ได้")){localStorage.removeItem(KEY);db=structuredClone(blank);save()}}
+
+$("#saveSupabase").onclick=()=>{setCfg({url:$("#supabaseUrl").value.trim().replace(/\/$/,""),key:$("#supabaseKey").value.trim()});$("#supabaseStatus").textContent="บันทึกแล้ว"};
+$("#testSupabase").onclick=async()=>{
+  $("#supabaseStatus").textContent="กำลังทดสอบ...";
+  try{const r=await supabaseFetch("health_records","?select=id&limit=1");$("#supabaseStatus").textContent=`เชื่อมต่อสำเร็จ (${Array.isArray(r)?r.length:0} row test)`}
+  catch(e){$("#supabaseStatus").textContent="เชื่อมต่อไม่สำเร็จ: "+e.message}
 };
-async function cloudAction(fn){
- try{if(id('conflictBox'))id('conflictBox').innerHTML='';await fn()}
- catch(err){if(err.code==='SYNC_CONFLICT')showConflict(err);else{logSync('error',err.message);alert('Cloud: '+err.message)}}
+async function supabaseFetch(table,suffix=""){
+  const c=getCfg();if(!c.url||!c.key)throw new Error("ยังไม่ได้ตั้งค่า URL / Key");
+  const res=await fetch(`${c.url}/rest/v1/${table}${suffix}`,{headers:{apikey:c.key,Authorization:`Bearer ${c.key}`}});
+  if(!res.ok)throw new Error(`${res.status} ${await res.text()}`);return res.json();
 }
-function renderSyncHistory(){
- if(!id('syncHistory'))return;
- const h=db.sync.history||[];
- id('syncHistory').innerHTML=h.length?h.map(x=>`<div class="sync-log ${x.type==='error'?'error':'ok'}"><strong>${esc(x.message)}</strong><small>${fmtDate(x.date)}</small></div>`).join(''):'<p class="muted">ยังไม่มีประวัติ sync</p>';
+async function supabaseInsert(table,rows){
+  const c=getCfg();const res=await fetch(`${c.url}/rest/v1/${table}`,{method:"POST",headers:{apikey:c.key,Authorization:`Bearer ${c.key}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify(rows)});
+  if(!res.ok)throw new Error(`${res.status} ${await res.text()}`);return true;
 }
-function renderCloudState(){
- const cfg=effectiveCloudConfig(), signed=!!sbSession?.user;
- if(id('supabaseUrl'))id('supabaseUrl').value=cfg?.url||'';
- if(id('supabaseKey'))id('supabaseKey').value=cfg?.key||'';
- if(id('cloudConnection'))id('cloudConnection').textContent=!cfg?'Not configured':sb?(signed?'Connected + signed in':'Connected • sign in required'):'Config saved';
- if(id('cloudBadge'))id('cloudBadge').textContent=signed?'Cloud ready':cfg?'Configured':'Local only';
- if(id('authSignedOut'))id('authSignedOut').style.display=signed?'none':'block';
- if(id('authSignedIn'))id('authSignedIn').style.display=signed?'block':'none';
- if(signed){if(id('signedEmail'))id('signedEmail').textContent=sbSession.user.email||'Signed in';if(id('signedUserId'))id('signedUserId').textContent=sbSession.user.id}
- if(id('lastSync'))id('lastSync').textContent=db.sync.lastSyncAt?fmtDate(db.sync.lastSyncAt):'Never';
- if(id('cloudRevision'))id('cloudRevision').textContent=db.sync.revision||'—';
- if(id('syncState'))id('syncState').textContent=signed?'Supabase sync':'Local only';
- renderSyncHistory();
-}
-if(id('supabaseConfigForm'))id('supabaseConfigForm').onsubmit=async e=>{
- e.preventDefault();
- const cfg={url:id('supabaseUrl').value.trim().replace(/\/$/,''),key:id('supabaseKey').value.trim()};
- if(!cfg.url||!cfg.key)return alert('กรุณาใส่ URL และ key');
- setCloudConfig(cfg,id('rememberCloudConfig').checked);
- await initSupabase();
- logSync('ok','บันทึก Supabase configuration แล้ว');
-};
-if(id('magicLinkForm'))id('magicLinkForm').onsubmit=e=>{
- e.preventDefault();cloudAction(async()=>{await sendMagicLink(id('authEmail').value.trim());logSync('ok','ส่ง Magic Link / OTP แล้ว');alert('ตรวจอีเมลเพื่อเข้าสู่ระบบ')})
-};
-if(id('signOutBtn'))id('signOutBtn').onclick=()=>cloudAction(signOutCloud);
-if(id('syncNowBtn'))id('syncNowBtn').onclick=()=>cloudAction(syncNow);
-if(id('pushCloudBtn'))id('pushCloudBtn').onclick=()=>cloudAction(()=>pushCloud(false));
-if(id('pullCloudBtn'))id('pullCloudBtn').onclick=()=>cloudAction(()=>pullCloud(false));
+function loadSettings(){const c=getCfg();$("#supabaseUrl").value=c.url||"";$("#supabaseKey").value=c.key||""}
 
-const __renderAllV5=renderAll;
-renderAll=function(){__renderAllV5();renderCloudState()};
-initSupabase().then(()=>renderCloudState());
-
-
-// ---------- v6 Health Analysis Engine ----------
-db.analysis=db.analysis||{lastRunAt:null};db.sync=db.sync||{};
-function cleanName(s){return String(s||'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim()}
-function numericValue(v){const s=String(v??'').replace(/,/g,'').trim(),m=s.match(/-?\d+(?:\.\d+)?/);return m?Number(m[0]):null}
-function inferCategory(name){const n=cleanName(name);if(/hba1c|glucose|น้ำตาล|fasting sugar/.test(n))return'glucose';if(/chol|ldl|hdl|trig|ไขมัน|non hdl/.test(n))return'lipid';if(/creatin|egfr|acr|albumin creatinine|urea|ไต/.test(n))return'kidney';if(/alt|ast|alp|bilirubin|ggt|ตับ/.test(n))return'liver';if(/haemoglobin|hemoglobin|wbc|rbc|platelet|cbc|mcv|mch|เลือด/.test(n))return'blood';return'other'}
-function refFromText(text){const t=String(text||'').replace(/,/g,'').trim();let m=t.match(/(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)/i);if(m)return{mode:'range',low:+m[1],high:+m[2]};m=t.match(/(?:<|≤|<=)\s*(-?\d+(?:\.\d+)?)/);if(m)return{mode:'max',high:+m[1],low:null};m=t.match(/(?:>|≥|>=)\s*(-?\d+(?:\.\d+)?)/);if(m)return{mode:'min',low:+m[1],high:null};return null}
-function structuredRef(l){if(l.refMode&&l.refMode!=='none'&&(l.refLow!=null||l.refHigh!=null))return{mode:l.refMode,low:l.refLow,high:l.refHigh,source:'structured'};const p=refFromText(l.range);return p?{...p,source:'text'}:null}
-function compareRef(value,ref){if(value==null||!ref)return null;if(ref.mode==='range'){if(ref.low!=null&&value<ref.low)return'low';if(ref.high!=null&&value>ref.high)return'high';return'normal'}if(ref.mode==='max')return ref.high!=null&&value>ref.high?'high':'normal';if(ref.mode==='min')return ref.low!=null&&value<ref.low?'low':'normal';return null}
-function unitNorm(u){return String(u||'').toLowerCase().replace(/\s/g,'')}
-function evidenceRule(lab,value){const n=cleanName(lab.name),u=unitNorm(lab.unit);if(/hba1c|glycated haemoglobin|glycated hemoglobin/.test(n)){if(u.includes('mmol/mol')&&value!=null){if(value>=48)return{state:'high',severity:'warn',label:'อยู่ในช่วงเกณฑ์ที่ใช้ประเมินเบาหวาน',note:'ควรให้แพทย์ตีความและยืนยันตามบริบท/การตรวจซ้ำ โดยเฉพาะถ้าไม่มีอาการ',evidence:'HbA1c ≥48 mmol/mol'};if(value>=42)return{state:'high',severity:'warn',label:'ความเสี่ยงเบาหวานเพิ่มขึ้น',note:'ช่วง 42–47 mmol/mol ใช้ระบุความเสี่ยงเพิ่มขึ้นในแนวทาง UK',evidence:'HbA1c 42–47 mmol/mol'};return{state:'normal',severity:'ok',label:'ต่ำกว่า 42 mmol/mol',note:'ต่ำกว่าช่วง increased-risk ตามเกณฑ์ UK',evidence:'HbA1c <42 mmol/mol'}}if((u==='%'||u.includes('percent'))&&value!=null){if(value>=6.5)return{state:'high',severity:'warn',label:'อยู่ในช่วงเกณฑ์ที่ใช้ประเมินเบาหวาน',note:'ควรให้แพทย์ตีความและยืนยัน',evidence:'HbA1c ≥6.5%'};if(value>=6.0)return{state:'high',severity:'warn',label:'ความเสี่ยงเบาหวานเพิ่มขึ้น',note:'ช่วง 6.0–6.4% สอดคล้องกับ increased-risk range',evidence:'HbA1c 6.0–6.4%'};return{state:'normal',severity:'ok',label:'ต่ำกว่า 6.0%',note:'ต่ำกว่าช่วง increased-risk',evidence:'HbA1c <6.0%'}}}
-if(/total cholesterol|cholesterol total|^cholesterol$|คอเลสเตอรอลรวม/.test(n)&&u==='mmol/l'&&value!=null)return value<5?{state:'normal',severity:'ok',label:'ต่ำกว่า 5 mmol/L',note:'อยู่ต่ำกว่า healthy guide ของ NHS สำหรับ total cholesterol',evidence:'NHS healthy guide <5 mmol/L'}:{state:'high',severity:'warn',label:'≥5 mmol/L',note:'สูงกว่า healthy guide ทั่วไป; เป้าหมายส่วนบุคคลขึ้นกับความเสี่ยงและการรักษา',evidence:'NHS healthy guide <5 mmol/L'};
-if(/non hdl/.test(n)&&u==='mmol/l'&&value!=null)return value<4?{state:'normal',severity:'ok',label:'ต่ำกว่า 4 mmol/L',note:'ต่ำกว่า healthy guide ทั่วไป',evidence:'NHS non-HDL guide <4 mmol/L'}:{state:'high',severity:'warn',label:'≥4 mmol/L',note:'สูงกว่า healthy guide ทั่วไป',evidence:'NHS non-HDL guide <4 mmol/L'};
-if(/\begfr\b|estimated glomerular/.test(n)&&value!=null&&value<60)return{state:'low',severity:'warn',label:'eGFR <60',note:'ควรประเมินร่วมกับ ACR และความต่อเนื่องของผล; ค่าเดียวไม่เพียงพอสำหรับสรุป CKD',evidence:'NICE CKD assessment uses eGFR + ACR/persistence'};return null}
-function testKey(l){return cleanName(l.name)+'|'+unitNorm(l.unit)}
-function historyFor(l){return db.labs.filter(x=>testKey(x)===testKey(l)).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)))}
-function trendFor(l){const h=historyFor(l).filter(x=>numericValue(x.value)!=null);if(h.length<2)return{direction:'insufficient',delta:null,count:h.length};const a=numericValue(h[h.length-2].value),b=numericValue(h[h.length-1].value),delta=b-a,tol=Math.max(Math.abs(a)*0.02,0.001);return{direction:Math.abs(delta)<=tol?'stable':delta>0?'up':'down',delta,count:h.length}}
-function analyseLab(lab){const value=numericValue(lab.value),ref=structuredRef(lab),refState=compareRef(value,ref),rule=evidenceRule(lab,value),trend=trendFor(lab);let state=refState||rule?.state||'unknown',severity='info',label='',note='';if(refState){severity=refState==='normal'?'ok':'warn';label=refState==='normal'?'อยู่ในช่วงอ้างอิงของแล็บ':refState==='high'?'สูงกว่าช่วงอ้างอิงของแล็บ':'ต่ำกว่าช่วงอ้างอิงของแล็บ';note='ใช้ช่วงอ้างอิงที่บันทึกจากใบแล็บเป็นหลัก'}else if(rule){severity=rule.severity;label=rule.label;note=rule.note}else{label=value==null?'ค่าไม่ใช่ตัวเลขสำหรับวิเคราะห์อัตโนมัติ':'ยังไม่มีช่วงอ้างอิงที่ใช้เปรียบเทียบ';note='เพิ่ม reference range จากใบแล็บเพื่อให้วิเคราะห์ได้แม่นยำขึ้น'}return{lab,value,ref,state,severity,label,note,rule,trend,category:lab.category&&lab.category!=='auto'?lab.category:inferCategory(lab.name)}}
-function latestByTest(){const map=new Map();db.labs.filter(l=>l.importStatus!=='needs-review').slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(l=>map.set(testKey(l),l));return[...map.values()].map(analyseLab)}
-function bpAnalysis(){const bp7=db.bp.filter(x=>withinDays(x.date,7));if(!bp7.length)return{state:'unknown',text:'ยังไม่มีความดันใน 7 วัน'};const s=mean(bp7.map(x=>x.sys)),d=mean(bp7.map(x=>x.dia));return s>=135||d>=85?{state:'warn',text:`ค่าเฉลี่ยความดันที่บ้าน 7 วัน ${s.toFixed(0)}/${d.toFixed(0)} mmHg สูงกว่า/เท่ากับเกณฑ์ 135/85 ที่ NHS ใช้พิจารณาว่าสูงเมื่อวัดที่บ้าน`}:{state:'ok',text:`ค่าเฉลี่ยความดันที่บ้าน 7 วัน ${s.toFixed(0)}/${d.toFixed(0)} mmHg ต่ำกว่า 135/85`}}
-function analysisPriorities(){const out=[],labs=latestByTest();labs.filter(x=>x.state==='high'||x.state==='low').forEach(x=>out.push({level:x.severity==='critical'?'critical':'warn',text:`${x.lab.name}: ${x.lab.value} ${x.lab.unit||''} — ${x.label}`,date:x.lab.date}));const bp=bpAnalysis();if(bp.state==='warn')out.push({level:'warn',text:bp.text,date:new Date().toISOString()});if(!out.length)out.push({level:'ok',text:'ยังไม่พบค่าล่าสุดที่ถูก flag จากข้อมูลและช่วงอ้างอิงที่บันทึกไว้',date:new Date().toISOString()});return out}
-function refText(a){const r=a.ref;if(!r)return a.lab.range||'ไม่ได้บันทึก';if(r.mode==='range')return`${r.low??'–'} – ${r.high??'–'}`;if(r.mode==='max')return`≤ ${r.high}`;if(r.mode==='min')return`≥ ${r.low}`;return a.lab.range||'—'}
-function trendText(t){if(t.direction==='insufficient')return'ยังมีข้อมูลไม่พอสำหรับแนวโน้ม';if(t.direction==='stable')return`ค่อนข้างคงที่ (${t.count} ครั้ง)`;return`${t.direction==='up'?'เพิ่มขึ้น':'ลดลง'} ${Math.abs(t.delta).toFixed(2)} จากครั้งก่อน`}
-function renderAnalysis(){db.analysis.lastRunAt=new Date().toISOString();const all=latestByTest(),filter=id('analysisCategoryFilter')?.value||'all',shown=filter==='all'?all:all.filter(x=>x.category===filter),pr=analysisPriorities(),attention=pr.filter(x=>x.level!=='ok').length;if(id('attentionCount'))id('attentionCount').textContent=attention;if(id('analysisBadge')){id('analysisBadge').textContent=attention?'มีประเด็นควรติดตาม':'ยังไม่พบ flag สำคัญ';id('analysisBadge').className='badge '+(attention?'warn':'ok')}if(id('analysisPriorities'))id('analysisPriorities').innerHTML=pr.map(x=>`<div class="priority-row ${x.level}">${esc(x.text)}</div>`).join('');if(id('systemOverview')){const b=bpAnalysis(),lastW=db.weights.at(-1),bm=lastW&&db.profile.height?bmi(lastW.value,db.profile.height):null;id('systemOverview').innerHTML=`<div class="system-item"><strong>ความดัน</strong><small>${esc(b.text)}</small></div><div class="system-item"><strong>น้ำหนัก / BMI</strong><small>${lastW?lastW.value.toFixed(1)+' kg'+(bm?' • BMI '+bm.toFixed(1):''):'ยังไม่มีข้อมูล'}</small></div><div class="system-item"><strong>ผลตรวจ</strong><small>${db.labs.length} รายการ • ${all.length} ชนิดการตรวจ</small></div><div class="system-item"><strong>กิจกรรม 7 วัน</strong><small>${weekMinutes()} / ${db.profile.weeklyGoal||150} นาทีตามเป้าที่ตั้งไว้</small></div>`}if(id('labAnalysisList'))id('labAnalysisList').innerHTML=shown.length?shown.sort((a,b)=>String(b.lab.date).localeCompare(String(a.lab.date))).map(a=>{const cls=a.state==='normal'?'normal':a.state==='unknown'?'unknown':a.severity==='critical'?'critical':a.state,stateCls=a.state==='normal'?'state-normal':a.state==='unknown'?'state-unknown':a.severity==='critical'?'state-critical':'state-warn';return`<div class="lab-result-card ${cls}"><div class="lab-main"><strong>${esc(a.lab.name)}</strong><div class="lab-meta">${esc(a.lab.date)} • Ref: ${esc(refText(a))} ${esc(a.lab.unit||'')}<br>${esc(a.note)}<br>Trend: ${esc(trendText(a.trend))}</div><span class="lab-state ${stateCls}">${esc(a.label)}</span>${a.rule?.evidence?`<div class="evidence-note">${esc(a.rule.evidence)}</div>`:''}</div><div class="lab-value">${esc(a.lab.value)} <small>${esc(a.lab.unit||'')}</small></div></div>`}).join(''):'<p class="muted">ยังไม่มีผลตรวจในกลุ่มนี้</p>';renderTrendSelector(all);renderClinicalReview(all)}
-function renderTrendSelector(all){if(!id('trendTestSelect'))return;const prev=id('trendTestSelect').value;id('trendTestSelect').innerHTML=all.length?all.map(a=>`<option value="${esc(testKey(a.lab))}">${esc(a.lab.name)} (${esc(a.lab.unit||'')})</option>`).join(''):'<option>ยังไม่มีข้อมูล</option>';if(prev&&[...id('trendTestSelect').options].some(o=>o.value===prev))id('trendTestSelect').value=prev;drawLabTrend()}
-function drawLabTrend(){if(!id('labTrendChart'))return;const key=id('trendTestSelect')?.value,items=db.labs.filter(l=>testKey(l)===key&&numericValue(l.value)!=null).sort((a,b)=>String(a.date).localeCompare(String(b.date))),c=id('labTrendChart'),ctx=c.getContext('2d'),W=c.width,H=c.height,p=45;ctx.clearRect(0,0,W,H);ctx.strokeStyle='#dbe5e5';for(let i=0;i<5;i++){const y=p+(H-2*p)*i/4;ctx.beginPath();ctx.moveTo(p,y);ctx.lineTo(W-p,y);ctx.stroke()}if(!items.length){ctx.fillStyle='#789';ctx.font='18px sans-serif';ctx.fillText('ยังไม่มีข้อมูลแนวโน้ม',p,H/2);if(id('trendNarrative'))id('trendNarrative').textContent='';return}const vals=items.map(x=>numericValue(x.value)),min0=Math.min(...vals),max0=Math.max(...vals),pad=Math.max((max0-min0)*.15,Math.abs(max0)*.05,.1),min=min0-pad,max=max0+pad;ctx.strokeStyle='#0f766e';ctx.lineWidth=4;ctx.beginPath();items.forEach((x,i)=>{const xx=p+(W-2*p)*(items.length===1?.5:i/(items.length-1)),v=numericValue(x.value),yy=H-p-(v-min)/(max-min)*(H-2*p);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);ctx.fillStyle='#0f766e';ctx.fillRect(xx-4,yy-4,8,8)});ctx.stroke();const t=trendFor(items.at(-1));if(id('trendNarrative'))id('trendNarrative').textContent=`${items.at(-1).name}: ${trendText(t)} • ใช้ ${items.length} ผลตรวจที่มีหน่วยเดียวกัน`}
-function renderClinicalReview(all){if(!id('clinicalReviewSummary'))return;const abnormal=all.filter(a=>a.state==='high'||a.state==='low'),bp=bpAnalysis();id('clinicalReviewSummary').innerHTML=`<div class="review-block"><strong>ประเด็นติดตาม</strong><br>${abnormal.length?abnormal.map(a=>`${esc(a.lab.name)} ${esc(a.lab.value)} ${esc(a.lab.unit||'')} (${esc(a.label)})`).join('<br>'):'ไม่มี lab flag จากข้อมูลล่าสุดที่บันทึก'}</div><div class="review-block"><strong>ความดัน</strong><br>${esc(bp.text)}</div><div class="review-block"><strong>คำถามสำหรับแพทย์</strong><br>• ผลที่ถูก flag ต้องตรวจซ้ำเมื่อใด?<br>• ต้องประเมินร่วมกับยา/โรคประจำตัวหรือผลตรวจอื่นหรือไม่?<br>• เป้าหมายส่วนบุคคลของผลตรวจและความดันควรเป็นเท่าใด?</div><div class="review-block muted">สรุปจากข้อมูลที่ผู้ใช้บันทึก ณ ${new Date().toLocaleString('th-TH')} • ไม่ใช่การวินิจฉัย</div>`}
-if(id('analysisCategoryFilter'))id('analysisCategoryFilter').onchange=renderAnalysis;if(id('reanalyseBtn'))id('reanalyseBtn').onclick=renderAnalysis;if(id('trendTestSelect'))id('trendTestSelect').onchange=drawLabTrend;if(id('copyReviewBtn'))id('copyReviewBtn').onclick=async()=>{const txt=id('clinicalReviewSummary')?.innerText||'';try{await navigator.clipboard.writeText(txt);alert('Copy Clinical Review Summary แล้ว')}catch{alert('ไม่สามารถ Copy อัตโนมัติได้')}};
-if(id('labCsvFile'))id('labCsvFile').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const text=await f.text(),lines=text.trim().split(/\r?\n/);if(lines.length<2)throw new Error('CSV ไม่มีข้อมูล');const parseLine=line=>{const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q}else if(ch===','&&!q){out.push(cur.trim());cur=''}else cur+=ch}out.push(cur.trim());return out};const head=parseLine(lines[0]).map(x=>x.toLowerCase()),idx=x=>head.indexOf(x);if(!['name','value','date'].every(x=>head.includes(x)))throw new Error('ต้องมีคอลัมน์ name,value,date');let added=0;for(const line of lines.slice(1)){const c=parseLine(line);if(!c[idx('name')]||!c[idx('value')]||!c[idx('date')])continue;const get=k=>idx(k)>=0?c[idx(k)]:'';db.labs.push({id:Date.now()+added,name:get('name'),value:get('value'),unit:get('unit'),date:get('date'),range:get('range'),refLow:get('ref_low')!==''?+get('ref_low'):null,refHigh:get('ref_high')!==''?+get('ref_high'):null,refMode:get('ref_mode')||'none',category:get('category')||'auto'});added++}save();renderAnalysis();alert(`นำเข้า Lab CSV สำเร็จ ${added} รายการ`)}catch(err){alert('นำเข้า CSV ไม่สำเร็จ: '+err.message)}};
-function healthCore(){return{profile:db.profile,bp:db.bp,weights:db.weights,activities:db.activities,meds:db.meds,labs:db.labs,medTaken:db.medTaken,reminders:db.reminders}}
-function simpleHash(obj){const s=JSON.stringify(obj);let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return(h>>>0).toString(16)}
-function dataHashOf(payload){if(!payload)return'';return simpleHash({profile:payload.profile,bp:payload.bp,weights:payload.weights,activities:payload.activities,meds:payload.meds,labs:payload.labs,medTaken:payload.medTaken,reminders:payload.reminders})}
-const _syncNowV5=syncNow;syncNow=async function(){const cloud=await fetchCloudRow();if(!cloud)return pushCloud();const localHash=simpleHash(healthCore()),cloudHash=dataHashOf(cloud.payload);if(localHash===cloudHash){db.sync.mode='supabase';db.sync.lastSyncAt=nowIso();db.sync.lastCloudUpdatedAt=cloud.updated_at;db.sync.lastSyncedLocalUpdatedAt=localUpdatedAt();db.sync.revision=cloud.revision||db.sync.revision;localStorage.setItem(KEY,JSON.stringify(db));logSync('ok','Smart Sync: ไม่มีข้อมูลสุขภาพเปลี่ยน • ไม่เพิ่ม revision');renderCloudState();return cloud}return _syncNowV5()};
-const __renderAllV6=renderAll;renderAll=function(){__renderAllV6();renderAnalysis()};renderAll();
-
-
-// ---------- v6.2 Image/PDF Lab Import ----------
-let docImportState={file:null,text:'',rows:[],worker:null};
-function setOcrProgress(label,pct){
- const wrap=id('ocrProgressWrap'); if(wrap)wrap.style.display='block';
- if(id('ocrStatus'))id('ocrStatus').textContent=label;
- const p=Math.max(0,Math.min(100,Math.round(pct||0)));
- if(id('ocrPercent'))id('ocrPercent').textContent=p+'%';
- if(id('ocrProgressBar'))id('ocrProgressBar').style.width=p+'%';
-}
-function resetDocImport(){
- docImportState={file:null,text:'',rows:[],worker:null};
- if(id('labDocFile'))id('labDocFile').value='';
- if(id('labDocPreview'))id('labDocPreview').innerHTML='<div class="muted">ยังไม่ได้เลือกไฟล์</div>';
- if(id('ocrProgressWrap'))id('ocrProgressWrap').style.display='none';
- if(id('ocrResultArea'))id('ocrResultArea').style.display='none';
- if(id('ocrRawText'))id('ocrRawText').value='';
- renderDetectedRows();
-}
-function filePreview(file){
- const p=id('labDocPreview');if(!p)return;
- if(file.type.startsWith('image/')){
-   const url=URL.createObjectURL(file);
-   p.innerHTML=`<img src="${url}" alt="Lab document preview">`;
- }else{
-   p.innerHTML=`<div class="pdf-preview"><strong>📄 ${esc(file.name)}</strong><small>${(file.size/1024/1024).toFixed(2)} MB • PDF</small><small class="muted">ระบบจะลองอ่านข้อความใน PDF ก่อน และใช้ OCR ถ้าเป็นไฟล์สแกน</small></div>`;
- }
-}
-async function loadPdfJs(){
- if(window.__pdfjs)return window.__pdfjs;
- const lib=await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@6.2.108/build/pdf.mjs');
- lib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@6.2.108/build/pdf.worker.mjs';
- window.__pdfjs=lib;return lib;
-}
-async function getOcrWorker(){
- if(docImportState.worker)return docImportState.worker;
- if(!window.Tesseract?.createWorker)throw new Error('OCR library โหลดไม่สำเร็จ (Tesseract.js unavailable) กรุณาตรวจอินเทอร์เน็ตแล้ว Reload');
- const opts={
-   workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/worker.min.js',
-   corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.0',
-   langPath:'https://tessdata.projectnaptha.com/4.0.0',
-   logger:m=>{
-     if(m.status==='recognizing text')setOcrProgress('กำลัง OCR…',(m.progress||0)*100);
-     else if(m.status)setOcrProgress('OCR: '+m.status,Math.max(5,(m.progress||0)*100));
-   }
- };
- // Safari/iPad can fail while loading multiple language packs. Try TH+EN first,
- // then fall back to English so numeric laboratory results remain usable.
- try{
-   setOcrProgress('กำลังเตรียม OCR ภาษาไทย + อังกฤษ…',5);
-   docImportState.worker=await Tesseract.createWorker(['eng','tha'],1,opts);
- }catch(firstErr){
-   console.warn('Thai+English OCR init failed; retrying English only',firstErr);
-   setOcrProgress('กำลังลอง OCR ภาษาอังกฤษสำรอง…',5);
-   try{ docImportState.worker=await Tesseract.createWorker('eng',1,opts); }
-   catch(secondErr){ throw new Error('เริ่ม OCR ไม่สำเร็จ: '+(secondErr?.message||firstErr?.message||'unknown OCR error')); }
- }
- return docImportState.worker;
-}
-async function ocrImageSource(source){
- const worker=await getOcrWorker();
- const {data:{text}}=await worker.recognize(source);
- return text||'';
-}
-async function extractPdf(file){
- setOcrProgress('กำลังเปิด PDF…',5);
- const pdfjs=await loadPdfJs(),bytes=new Uint8Array(await file.arrayBuffer());
- const pdf=await pdfjs.getDocument({data:bytes}).promise;
- let textParts=[], canvases=[];
- const maxPages=Math.min(pdf.numPages,12);
- for(let i=1;i<=maxPages;i++){
-   setOcrProgress(`กำลังอ่านข้อความ PDF หน้า ${i}/${maxPages}`,5+40*(i/maxPages));
-   const page=await pdf.getPage(i),tc=await page.getTextContent();
-   const txt=tc.items.map(x=>x.str).join(' ').replace(/\s+/g,' ').trim();
-   if(txt.length>35){textParts.push(`--- Page ${i} ---\n${txt}`);continue}
-   const viewport=page.getViewport({scale:1.8}),canvas=document.createElement('canvas');
-   canvas.width=Math.round(viewport.width);canvas.height=Math.round(viewport.height);
-   await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
-   canvases.push({page:i,canvas});
- }
- if(canvases.length){
-   for(let j=0;j<canvases.length;j++){
-     const x=canvases[j];setOcrProgress(`OCR PDF หน้า ${x.page} (${j+1}/${canvases.length})`,45+50*((j+1)/canvases.length));
-     const txt=await ocrImageSource(x.canvas);
-     textParts.push(`--- Page ${x.page} OCR ---\n${txt}`);
-   }
- }
- return textParts.join('\n\n');
-}
-function normalizeOcrText(t){
- return String(t||'')
-   .replace(/[|¦]/g,' ')
-   .replace(/[ \t]+/g,' ')
-   .replace(/\r/g,'')
-   .replace(/\n{3,}/g,'\n\n')
-   .trim();
-}
-const UNIT_RX='(?:mmol\\/L|mmol\\/l|mg\\/dL|mg\\/dl|g\\/dL|g\\/L|U\\/L|IU\\/L|µmol\\/L|umol\\/L|mL\\/min\\/1\\.73m2|%|mmol\\/mol|10\\^?9\\/L|10\\^?12\\/L|pg|fL|ng\\/mL|mIU\\/L|µIU\\/mL)';
-function detectLabRowsFromText(text){
- const lines=normalizeOcrText(text).split(/\n+/).map(x=>x.trim()).filter(Boolean);
- const rows=[],seen=new Set(),today=new Date().toISOString().slice(0,10);
- const refRange=/(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)/i;
- const valUnit=new RegExp('(-?\\d+(?:\\.\\d+)?)\\s*('+UNIT_RX+')?','i');
- for(let raw of lines){
-   let line=raw.replace(/\s{2,}/g,' ').trim();
-   if(line.length<3||line.length>180)continue;
-   const m=line.match(valUnit);if(!m)continue;
-   const value=m[1],unit=m[2]||'';
-   const before=line.slice(0,m.index).replace(/[:;•]+$/,'').trim();
-   if(before.length<2||/^(page|date|dob|age|sex|time|patient|reference|range|result)$/i.test(before))continue;
-   // Avoid dates and IDs misread as labs.
-   if(/^\d/.test(before)||/\b(?:19|20)\d{2}\b/.test(before))continue;
-   let low=null,high=null,mode='none',range='';
-   const after=line.slice((m.index||0)+m[0].length);
-   const rr=after.match(refRange);
-   if(rr){low=+rr[1];high=+rr[2];mode='range';range=`${rr[1]}-${rr[2]}`}
-   else{
-     const mx=after.match(/[<≤]\s*(-?\d+(?:\.\d+)?)/);const mn=after.match(/[>≥]\s*(-?\d+(?:\.\d+)?)/);
-     if(mx){high=+mx[1];mode='max';range=`<${mx[1]}`}
-     else if(mn){low=+mn[1];mode='min';range=`>${mn[1]}`}
-   }
-   const name=before.replace(/^[^\p{L}]+/gu,'').trim();
-   const key=(name+'|'+value+'|'+unit).toLowerCase();if(seen.has(key))continue;seen.add(key);
-   rows.push({selected:true,name,value,unit,date:today,range,refLow:low,refHigh:high,refMode:mode,category:'auto'});
- }
- return rows.slice(0,80);
-}
-function renderDetectedRows(){
- const host=id('detectedLabRows');if(!host)return;
- const rows=docImportState.rows||[];
- if(id('detectedCount'))id('detectedCount').textContent=rows.length+' รายการ';
- if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').disabled=!rows.some(r=>r.selected);
- if(!rows.length){host.innerHTML='<p class="muted">ยังไม่พบรายการอัตโนมัติ คุณสามารถแก้ข้อความด้านบนแล้วกด “ตรวจหารายการผลตรวจ” อีกครั้ง</p>';return}
- host.innerHTML=`<div class="detect-row detect-head"><div>เลือก</div><div>รายการ</div><div>ค่า</div><div>หน่วย</div><div>วันที่</div><div></div></div>`+
- rows.map((r,i)=>`<div class="detect-row" data-i="${i}">
-   <input type="checkbox" ${r.selected?'checked':''} onchange="docImportState.rows[${i}].selected=this.checked;renderDetectedRows()">
-   <input value="${esc(r.name)}" oninput="docImportState.rows[${i}].name=this.value" placeholder="รายการตรวจ">
-   <input value="${esc(r.value)}" oninput="docImportState.rows[${i}].value=this.value" placeholder="ค่า">
-   <input class="detect-unit" value="${esc(r.unit)}" oninput="docImportState.rows[${i}].unit=this.value" placeholder="หน่วย">
-   <input class="detect-date" type="date" value="${esc(r.date)}" oninput="docImportState.rows[${i}].date=this.value">
-   <button class="remove-detect" onclick="docImportState.rows.splice(${i},1);renderDetectedRows()" type="button">ลบ</button>
-   ${r.qualityReason?`<div class="detect-quality ${r.confidence==='low'?'bad':'warn'}"><strong>${r.confidence==='low'?'ต้องตรวจสอบ':'OCR ต้องยืนยัน'}</strong> • ${esc(r.qualityReason)}</div>`:''}
-   ${r.ocrCropPreview?`<div class="ocr-cell-proof"><span>ภาพช่อง Result ต้นฉบับ</span><img src="${r.ocrCropPreview}" alt="Result crop ${esc(r.name)}"></div>`:''}
-   <div class="detect-ref">
-     <input type="number" step="any" value="${r.refLow??''}" oninput="docImportState.rows[${i}].refLow=this.value===''?null:+this.value" placeholder="Ref ต่ำสุด">
-     <input type="number" step="any" value="${r.refHigh??''}" oninput="docImportState.rows[${i}].refHigh=this.value===''?null:+this.value" placeholder="Ref สูงสุด">
-     <select onchange="docImportState.rows[${i}].refMode=this.value">
-       <option value="none" ${r.refMode==='none'?'selected':''}>ไม่มี structured range</option>
-       <option value="range" ${r.refMode==='range'?'selected':''}>Low–High</option>
-       <option value="max" ${r.refMode==='max'?'selected':''}>≤ High</option>
-       <option value="min" ${r.refMode==='min'?'selected':''}>≥ Low</option>
-     </select>
-   </div>
- </div>`).join('');
-}
-async function processLabDocument(file){
- docImportState.file=file;filePreview(file);
- if(id('ocrResultArea'))id('ocrResultArea').style.display='none';
- try{
-   let text='';
-   if(file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf')){
-     text=await extractPdf(file);
-   }else if(file.type.startsWith('image/')){
-     setOcrProgress('กำลัง OCR รูปผลตรวจ…',5);text=await ocrImageSource(file);
-   }else throw new Error('รองรับ JPG, PNG และ PDF; HEIC ขึ้นอยู่กับ Safari/iOS ว่าสามารถ decode ได้หรือไม่');
-   text=normalizeOcrText(text);
-   docImportState.text=text;
-   setOcrProgress('อ่านเอกสารเสร็จแล้ว',100);
-   if(id('ocrRawText'))id('ocrRawText').value=text;
-   if(id('ocrResultArea'))id('ocrResultArea').style.display='block';
-   docImportState.rows=detectLabRowsFromText(text);renderDetectedRows();
-   if(!text)alert('ไม่พบข้อความในเอกสาร ลองใช้รูปที่คมชัดขึ้นหรือ PDF ต้นฉบับ');
- }catch(err){
-   console.error('Document import/OCR error',err);
-   const msg=err?.message||String(err)||'Unknown error';
-   setOcrProgress('OCR อัตโนมัติไม่สำเร็จ — ใช้โหมดตรวจแก้ด้วยตนเองได้',0);
-   if(id('ocrHint'))id('ocrHint').textContent='รายละเอียด: '+msg;
-   // Never trap the user on an OCR failure. Keep the selected document preview
-   // visible and open the editable text/result area for manual entry/retry.
-   if(id('ocrResultArea'))id('ocrResultArea').style.display='block';
-   if(id('ocrRawText')&&!id('ocrRawText').value)id('ocrRawText').placeholder='OCR ไม่สำเร็จ คุณสามารถพิมพ์/วางข้อความจากผลตรวจที่นี่ แล้วกด “ตรวจหารายการผลตรวจ”';
-   docImportState.rows=[];renderDetectedRows();
-   alert('OCR อัตโนมัติไม่สำเร็จ แต่ยังใช้ไฟล์นี้ต่อได้\n\n'+msg+'\n\nพิมพ์หรือวางข้อความผลตรวจ แล้วกด “ตรวจหารายการผลตรวจ”');
- }
-}
-if(id('labDocFile'))id('labDocFile').onchange=e=>{const f=e.target.files?.[0];if(f)processLabDocument(f)};
-if(id('detectLabsBtn'))id('detectLabsBtn').onclick=()=>{
- docImportState.text=id('ocrRawText').value;docImportState.rows=detectLabRowsFromText(docImportState.text);renderDetectedRows();
-};
-if(id('clearOcrBtn'))id('clearOcrBtn').onclick=resetDocImport;
-if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').onclick=()=>{
- const chosen=docImportState.rows.filter(r=>r.selected&&String(r.name).trim()&&String(r.value).trim());
- if(!chosen.length)return alert('กรุณาเลือกอย่างน้อย 1 รายการ');
- let added=0;
- for(const r of chosen){
-   db.labs.push({id:Date.now()+added,name:String(r.name).trim(),value:String(r.value).trim(),unit:String(r.unit||'').trim(),date:r.date||new Date().toISOString().slice(0,10),
-    range:r.range||'',refLow:r.refLow??null,refHigh:r.refHigh??null,refMode:r.refMode||'none',category:r.category||'auto',source:'document-import',sourceFile:docImportState.file?.name||''});
-   added++;
- }
- save();renderAnalysis();alert(`บันทึกผลตรวจจากเอกสารแล้ว ${added} รายการ กรุณาตรวจหน้า “วิเคราะห์สุขภาพ” อีกครั้ง`);
- resetDocImport();
-};
-window.docImportState=docImportState;window.renderDetectedRows=renderDetectedRows;
-
-window.db=db;
-
-// ---------- v6.2.2 Robust Medical Document Import ----------
-db.documents=db.documents||[];
-// v6.3 migration: legacy v6.2.2 OCR rows were auto-saved too aggressively.
-// Keep them for audit/history, but exclude them from automatic health analysis until re-imported/confirmed.
-if(!db._v63LegacyQuarantine){
-  db.labs=(db.labs||[]).map(l=>l?.source==='document-import-v6.2.2'?{...l,importStatus:'needs-review'}:l);
-// v6.4 Data Quality Gate: quarantine ALL legacy OCR imports. They remain in storage for audit but are hidden from clinical views.
-const V64_MIGRATION_KEY='healthcare_v64_quality_migrated';
-if(!localStorage.getItem(V64_MIGRATION_KEY)){
- db.labs=(db.labs||[]).map(l=>{
-   const legacy=String(l?.source||'').startsWith('document-import-v6.') && !['document-import-v6.4','document-import-v6.5'].includes(l?.source);
-   return legacy?{...l,importStatus:'needs-review',qualityReason:'Legacy OCR import quarantined by v6.4'}:l;
- });
- localStorage.setItem(V64_MIGRATION_KEY,'1'); localStorage.setItem(KEY,JSON.stringify(db));
-}
-  db._v63LegacyQuarantine=true;
-  try{localStorage.setItem(KEY,JSON.stringify(db))}catch{}
-}
-const V622_DOC_LABELS={lab:'Lab / Health Check',xray:'Chest X-ray',ultrasound:'Ultrasound',ecg:'ECG',other:'Medical document'};
-
-function v622ParseDate(text){
- const m=String(text||'').match(/\b(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})\b/);
- if(!m)return new Date().toISOString().slice(0,10);
- let y=+m[3]; if(y>2400)y-=543;
- const d=new Date(y,+m[2]-1,+m[1]);
- return isNaN(d)?new Date().toISOString().slice(0,10):d.toISOString().slice(0,10);
-}
-function v622Classify(text){
- const t=cleanName(text);
- if(/electrocardiogram|normal sinus rhythm|qrs|qtc|qt qtc|ventricular rate|ecg|ekg/.test(t))return'ecg';
- if(/ultrasound|us whole abdomen|whole abdomen|gallbladder|portal veins|hepatomegaly|fatty liver|prostate gland/.test(t))return'ultrasound';
- if(/chest x ray|chest pa|pulmonary infiltration|pleural effusion|pneumothorax|cardiomediastinal|bony thorax/.test(t))return'xray';
- if(/health report|blood chemistry|cbc|cholesterol|triglyceride|hba1c|uric acid|creatinine|fasting blood|fbs|platelet/.test(t))return'lab';
- return'other';
-}
-function v622Section(text,startRx,endRx){
- const s=String(text||'').replace(/\r/g,''); const m=s.match(startRx); if(!m)return'';
- let out=s.slice((m.index||0)+m[0].length);
- if(endRx){const e=out.search(endRx); if(e>=0)out=out.slice(0,e)}
- return out.replace(/\n{3,}/g,'\n\n').trim().slice(0,2200);
-}
-function v622Summary(type,text){
- const raw=String(text||'');
- if(type==='xray'){
-   const imp=v622Section(raw,/IMPRESSION\s*:?/i,/\b(?:Request|Report By|Print By)\b/i);
-   const find=v622Section(raw,/FINDINGS\s*:?/i,/IMPRESSION\s*:?/i);
-   return [find&&'Findings: '+find,imp&&'Impression: '+imp].filter(Boolean).join('\n\n') || raw.match(/No active chest disease\.?/i)?.[0] || '';
- }
- if(type==='ultrasound'){
-   const imp=v622Section(raw,/IMPRESSION\s*:?/i,/\b(?:Request|Report By|Print By)\b/i);
-   const find=v622Section(raw,/FINDINGS\s*:?/i,/IMPRESSION\s*:?/i);
-   return [find&&'Findings: '+find,imp&&'Impression: '+imp].filter(Boolean).join('\n\n').slice(0,3000);
- }
- if(type==='ecg'){
-   const parts=[];
-   const rate=raw.match(/(?:ventricular rate|heart rate|rate)?\s*[:=]?\s*(\d{2,3})\s*bpm/i); if(rate)parts.push('Heart rate: '+rate[1]+' bpm');
-   const rhythm=raw.match(/normal sinus rhythm/i); if(rhythm)parts.push('Rhythm: Normal sinus rhythm');
-   const interp=raw.match(/normal ecg/i); if(interp)parts.push('Interpretation: Normal ECG');
-   for(const [label,rx] of [['PR',/\bPR\s*[:=]?\s*(\d{2,4})\s*ms/i],['QRS',/\bQRS\s*[:=]?\s*(\d{2,4})\s*ms/i],['QT/QTc',/\bQT\s*\/\s*QTc\s*[:=]?\s*([\d/]+)\s*ms/i]]){const m=raw.match(rx);if(m)parts.push(label+': '+m[1]+' ms')}
-   return parts.join('\n') || v622Section(raw,/ECG/i,null).slice(0,1200);
- }
- if(type==='lab')return 'ตรวจพบเอกสารผลตรวจสุขภาพ/แล็บ • ตรวจและยืนยันรายการด้านล่างก่อนบันทึก';
- return raw.slice(0,1500);
-}
-
-// ---------- v6.5 Smart Lab Importer ----------
-// Conservative, template-aware lab extraction. The importer never invents a patient
-// result from a reference value. Ambiguous rows stay unselected and are clearly flagged.
-const V65_LABS=[
- {name:'HbA1c',rx:/(?:HbA1c|HBA1C)/i,unit:'%',low:null,high:null,cat:'glucose',min:2,max:20,shape:'decimal'},
- {name:'FBS',rx:/(?:\bFBS\b|Fasting\s*(?:Blood\s*)?(?:Sugar|Glucose)|น้ำตาลในเลือด)/i,unit:'mg/dL',low:70,high:99,cat:'glucose',min:30,max:700},
- {name:'BUN',rx:/\bBUN\b/i,unit:'mg/dL',low:6,high:20,cat:'kidney',min:1,max:250},
- {name:'Creatinine',rx:/(?:\bCreatinine\b|\bCr\b)/i,unit:'mg/dL',low:.67,high:1.17,cat:'kidney',min:.1,max:25,shape:'decimal'},
- {name:'eGFR',rx:/\beGFR\b/i,unit:'mL/min/1.73m2',low:90,high:null,cat:'kidney',min:1,max:200},
- {name:'Uric acid',rx:/(?:Uric\s*acid|กรดยูริก)/i,unit:'mg/dL',low:3.4,high:7,cat:'other',min:.5,max:30,shape:'decimal'},
- {name:'Cholesterol',rx:/(?:Total\s*Cholesterol|\bCholesterol\b)/i,unit:'mg/dL',low:null,high:200,cat:'lipid',min:50,max:800},
- {name:'Triglyceride',rx:/(?:Triglyceride|Triglycerides|\bTG\b)/i,unit:'mg/dL',low:null,high:150,cat:'lipid',min:10,max:3000},
- {name:'HDL-C',rx:/(?:HDL[- ]?C|\bHDL\b)/i,unit:'mg/dL',low:55,high:null,cat:'lipid',min:5,max:200},
- {name:'LDL-C',rx:/(?:LDL[- ]?C|\bLDL\b)/i,unit:'mg/dL',low:null,high:100,cat:'lipid',min:5,max:600},
- {name:'SGOT (AST)',rx:/(?:SGOT|\bAST\b)/i,unit:'U/L',low:null,high:41,cat:'liver',min:1,max:5000},
- {name:'SGPT (ALT)',rx:/(?:SGPT|\bALT\b)/i,unit:'U/L',low:null,high:42,cat:'liver',min:1,max:5000},
- {name:'Alk-phos',rx:/(?:Alk[- ]?phos|Alkaline\s*Phosphatase|\bALP\b)/i,unit:'U/L',low:40,high:130,cat:'liver',min:5,max:3000},
- {name:'Hb',rx:/(?:\bHb\b|Hemoglobin|Haemoglobin)/i,unit:'g/dL',low:12.7,high:16.9,cat:'blood',min:2,max:25,shape:'decimal'},
- {name:'Hct',rx:/(?:\bHct\b|Hematocrit|Haematocrit)/i,unit:'%',low:40.3,high:51.9,cat:'blood',min:5,max:75,shape:'decimal'},
- {name:'WBC',rx:/\bWBC\b/i,unit:'10^9/L',low:4.5,high:11.3,cat:'blood',min:.1,max:100,shape:'decimal'},
- {name:'Platelet',rx:/(?:Platelet|\bPLT\b)/i,unit:'10^9/L',low:160,high:356,cat:'blood',min:5,max:1500},
- {name:'PSA',rx:/\bPSA\b/i,unit:'ng/mL',low:null,high:null,cat:'other',min:0,max:500,shape:'decimal'}
-];
-// Backwards-compatible aliases used by older helpers.
-const V63_LABS=V65_LABS;
-const V63_CANONICAL=new Set(V65_LABS.map(x=>x.name.toLowerCase()));
-function v65NumericCandidates(t){
- return [...String(t||'').replace(/[Oo](?=\d)/g,'0').replace(/(?<=\d)[Oo]/g,'0').matchAll(/-?\d+(?:[.,]\d+)?/g)]
-  .map(m=>({v:+m[0].replace(',','.'),raw:m[0],i:m.index||0}))
-  .filter(x=>Number.isFinite(x.v)&&!(x.v>=1900&&x.v<=2600));
-}
-function v65IsRefValue(spec,v){
- const eq=(a,b)=>a!=null&&Math.abs(v-a)<1e-8;
- return eq(spec.low,v)||eq(spec.high,v);
-}
-function v65ReferenceMeta(spec){
- if(spec.low!=null&&spec.high!=null)return{mode:'range',range:`${spec.low}-${spec.high}`};
- if(spec.high!=null)return{mode:'max',range:`<${spec.high}`};
- if(spec.low!=null)return{mode:'min',range:`>${spec.low}`};
- return{mode:'none',range:''};
-}
-function v65CandidateScore(spec,c,ctx,labelEnd){
- if(c.v<spec.min||c.v>spec.max)return-999;
- let score=20;
- // Patient result is expected after the test label and before reference notation/values.
- const rel=c.i-labelEnd;if(rel>=0)score+=12;else score-=8;
- if(v65IsRefValue(spec,c.v))score-=45;
- if(spec.shape==='decimal'&&/[.,]/.test(c.raw))score+=8;
- if(spec.shape==='decimal'&&!/[.,]/.test(c.raw))score-=3;
- // Strong penalty when immediately preceded by a comparison sign: almost certainly reference.
- const pre=ctx.slice(Math.max(0,c.i-3),c.i);if(/[<≤>≥]/.test(pre))score-=60;
- // IDs / dates are not lab values.
- if(c.v>10000)score-=80;
- return score;
-}
-function v65FindKnownLab(text,spec){
- const lines=normalizeOcrText(text).split(/\n+/).map(x=>x.trim()).filter(Boolean);
- for(let idx=0;idx<lines.length;idx++){
-   const line=lines[idx],m=line.match(spec.rx);if(!m)continue;
-   // Use a three-line neighborhood: OCR often wraps result/reference into adjacent lines.
-   const before=idx>0?lines[idx-1]+' ':'';
-   const after=idx+1<lines.length?' '+lines[idx+1]:'';
-   const ctx=(before+line+after).slice(0,420);
-   const labelPos=before.length+(m.index||0),labelEnd=labelPos+m[0].length;
-   const nums=v65NumericCandidates(ctx).filter(x=>x.v>=spec.min&&x.v<=spec.max);
-   if(!nums.length)return null;
-   const ranked=nums.map(c=>({...c,score:v65CandidateScore(spec,c,ctx,labelEnd)})).sort((a,b)=>b.score-a.score);
-   const best=ranked[0];
-   if(!best||best.score<10)return{value:'',quality:'low',reason:'ไม่พบค่าผลตรวจที่แยกจาก reference ได้อย่างมั่นใจ',line};
-   // A value identical to a known reference boundary is never accepted as the patient result.
-   if(v65IsRefValue(spec,best.v))return{value:'',quality:'low',reason:'OCR จับค่า reference เป็นผลตรวจ',line};
-   // If top candidates are nearly tied, keep the best value visible but require review.
-   const ambiguous=ranked[1]&&ranked[1].score>=best.score-4&&Math.abs(ranked[1].v-best.v)>1e-8;
-   return {value:String(best.v),quality:ambiguous?'medium':'high',reason:ambiguous?'มีตัวเลขหลายค่าที่เป็นไปได้ กรุณาเทียบกับใบจริง':'',line};
- }
- const flat=normalizeOcrText(text).replace(/\n/g,' '),m=flat.match(spec.rx);if(!m)return null;
- const ctx=flat.slice(Math.max(0,(m.index||0)-80),(m.index||0)+m[0].length+180),lm=ctx.match(spec.rx);
- const labelEnd=(lm?.index||0)+(lm?.[0]?.length||0),ranked=v65NumericCandidates(ctx).map(c=>({...c,score:v65CandidateScore(spec,c,ctx,labelEnd)})).sort((a,b)=>b.score-a.score);
- const best=ranked.find(x=>x.score>=10&&!v65IsRefValue(spec,x.v));
- return best?{value:String(best.v),quality:'medium',reason:'อ่านจากข้อความต่อเนื่อง กรุณาตรวจเทียบใบจริง',line:ctx}:null;
-}
-function detectLabRowsFromText(text){
- const rows=[],date=v622ParseDate(text);
- for(const spec of V65_LABS){
-   const hit=v65FindKnownLab(text,spec);if(!hit)continue;
-   const ref=v65ReferenceMeta(spec),valid=hit.value!==''&&v65PlausibleValue(spec,hit.value);
-   rows.push({selected:false,name:spec.name,value:hit.value,unit:spec.unit,date,range:ref.range,refLow:spec.low,refHigh:spec.high,refMode:ref.mode,category:spec.cat,confidence:valid?hit.quality:'low',reviewRequired:true,qualityReason:valid?(hit.reason||'ผล OCR ต้องยืนยันกับเอกสารก่อนบันทึก'):(hit.reason||'ค่าที่อ่านได้ไม่ผ่านการตรวจสอบ')});
- }
- return rows;
-}
-function v65PlausibleValue(spec,value){
- const v=+value;if(!Number.isFinite(v)||v<spec.min||v>spec.max)return false;
- if(v65IsRefValue(spec,v))return false;
- return true;
-}
-function v63PlausibleRow(r){
- const spec=V65_LABS.find(x=>x.name===r.name);return !!spec&&v65PlausibleValue(spec,r.value);
-}
-async function v622CanvasFromFile(file,rotation=0,variant='contrast'){
- const bmp=await createImageBitmap(file,{imageOrientation:'from-image'}).catch(()=>createImageBitmap(file));
- // v6.5: use a larger working image for small printed lab values.
- const max=3200,scale=Math.min(2.5,max/Math.max(bmp.width,bmp.height),2.05); const w=Math.max(1,Math.round(bmp.width*scale)),h=Math.max(1,Math.round(bmp.height*scale));
- const swap=Math.abs(rotation)%180===90,canvas=document.createElement('canvas');canvas.width=swap?h:w;canvas.height=swap?w:h;
- const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.save();ctx.translate(canvas.width/2,canvas.height/2);ctx.rotate(rotation*Math.PI/180);ctx.drawImage(bmp,-w/2,-h/2,w,h);ctx.restore();
- const im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data;
- for(let i=0;i<d.length;i+=4){
-   let y=.299*d[i]+.587*d[i+1]+.114*d[i+2];
-   if(variant==='threshold') y=y>182?255:(y<92?0:Math.max(0,Math.min(255,(y-128)*1.65+128)));
-   else y=Math.max(0,Math.min(255,(y-128)*1.32+128));
-   d[i]=d[i+1]=d[i+2]=y;
- }
- ctx.putImageData(im,0,0);return canvas;
-}
-async function v622OcrImage(file){
- const worker=await getOcrWorker();
- try{await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});}catch(e){console.warn('OCR parameters unavailable',e)}
- const orientations=[0,90,270],candidates=[];
- for(let oi=0;oi<orientations.length;oi++){
-   const rot=orientations[oi];
-   // First pass on every orientation; only do the high-contrast second pass on the best-looking orientation later.
-   setOcrProgress(`OCR เอกสาร ${rot===0?'แนวตั้ง':'หมุน '+rot+'°'}…`,8+oi*20);
-   const c=await v622CanvasFromFile(file,rot,'contrast'),r=await worker.recognize(c);
-   candidates.push({text:r.data?.text||'',confidence:r.data?.confidence||0,rotation:rot,variant:'contrast'});
- }
- let best=candidates.sort((a,b)=>(b.confidence+b.text.length/800)-(a.confidence+a.text.length/800))[0];
- // A second preprocessing pass often restores missing leading digits such as 158 -> 58.
- setOcrProgress('OCR รอบละเอียดสำหรับตัวเลข…',72);
- const hc=await v622CanvasFromFile(file,best.rotation,'threshold'),hr=await worker.recognize(hc),high={text:hr.data?.text||'',confidence:hr.data?.confidence||0,rotation:best.rotation,variant:'threshold'};
- // Merge both texts rather than discarding one pass. Parser can use alternative candidates from either pass.
- const merged=[best.text,high.text].filter(Boolean).join('\n--- OCR SECOND PASS ---\n');
- const chosen=high.confidence>best.confidence+5?high:best;
- return {text:merged||chosen.text,confidence:Math.max(best.confidence,high.confidence),rotation:chosen.rotation};
-}
-
-
-// ---------- v6.8 Calibrated Multi-pass Template OCR ----------
-// Calibrated against the supplied Golden Jubilee / Mahidol Health Report photo.
-// Each RESULT cell is read three times with slightly different crop bounds.
-// A value is accepted only when at least two passes agree; otherwise it stays review-only.
-// v7.0: row centres re-calibrated from the supplied 1152x1536 source photo.
-// v6.8 drifted progressively downward after the first rows, which caused values from
-// neighbouring/reference rows to be read as patient results. These centres match the
-// actual RESULT cells, and the x crop is kept strictly inside the Result column.
-const V68_TEMPLATE_ROWS=[
- ['FBS',0.3529],['BUN',0.3698],['Creatinine',0.3867],['eGFR',0.4036],
- ['Uric acid',0.4206],['Cholesterol',0.4375],['Triglyceride',0.4544],
- ['HDL-C',0.4714],['LDL-C',0.4883],['SGOT (AST)',0.5052],['SGPT (ALT)',0.5221],
- ['Alk-phos',0.5391],['Hb',0.5859],['Hct',0.6029],['WBC',0.6198],['Platelet',0.6367],
- ['HbA1c',0.8203],['PSA',0.8333]
-];
-function v68TemplateLikely(text,canvas){
- const t=String(text||'').toLowerCase();
- return !!canvas && canvas.height>canvas.width*1.15 && (/(health\s*report|check\s*up\s*center|golden\s*jubilee|mahidol|690020840)/i.test(t)||/\bfbs\b/i.test(t));
-}
-function v68CropCanvas(src,x0,y0,x1,y1,variant='contrast'){
- const sx=Math.max(0,Math.floor(src.width*x0)), sy=Math.max(0,Math.floor(src.height*y0));
- const sw=Math.max(2,Math.floor(src.width*(x1-x0))), sh=Math.max(2,Math.floor(src.height*(y1-y0)));
- const scale=5,c=document.createElement('canvas');c.width=sw*scale;c.height=sh*scale;
- const ctx=c.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=true;ctx.drawImage(src,sx,sy,sw,sh,0,0,c.width,c.height);
- const im=ctx.getImageData(0,0,c.width,c.height),d=im.data;
- for(let i=0;i<d.length;i+=4){let y=.299*d[i]+.587*d[i+1]+.114*d[i+2];
-   if(variant==='binary')y=y>170?255:0; else if(variant==='soft')y=Math.max(0,Math.min(255,(y-128)*1.35+128)); else y=y>210?255:(y<75?0:Math.max(0,Math.min(255,(y-142)*1.95+142)));
-   d[i]=d[i+1]=d[i+2]=y;
- }
- ctx.putImageData(im,0,0);return c;
-}
-function v73PrecisionHint(spec){
- const m={'HbA1c':1,'Creatinine':2,'Uric acid':1,'Hb':1,'Hct':1,'WBC':2,'PSA':3};
- return m[spec?.name]??0;
-}
-function v71NumericTokens(txt,spec){
- let t=String(txt||'').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/,/g,'.');
- const out=[];
- for(const m of t.matchAll(/(?:\d+\.\d+|\.\d+|\d+)/g)){
-   let raw=m[0],v=Number(raw.startsWith('.')?'0'+raw:raw);if(Number.isFinite(v))out.push({raw,v,derived:false});
-   const p=v73PrecisionHint(spec),digits=raw.replace(/\D/g,'');
-   // Decimal recovery from a dropped dot (094→0.94, 691→6.91, 158→15.8).
-   if(p>0&&!raw.includes('.')&&digits.length>p){const rr=digits.slice(0,-p)+'.'+digits.slice(-p),vv=Number(rr);if(Number.isFinite(vv))out.push({raw:rr,v:vv,derived:true,derivedFrom:raw});}
-   // Trim a likely extra trailing glyph when OCR reads one decimal too many (15.81→15.8).
-   if(p>0&&raw.includes('.')){const [a,b='']=raw.split('.');if(b.length>p){const rr=a+'.'+b.slice(0,p),vv=Number(rr);if(Number.isFinite(vv))out.push({raw:rr,v:vv,derived:true,derivedFrom:raw});}}
- }
- const seen=new Set();return out.filter(x=>{const k=x.raw+'|'+x.v;if(seen.has(k))return false;seen.add(k);return true});
-}
-function v72RefPlausibility(spec,v){
- let score=0;
- if(spec.low!=null&&spec.high!=null){
-   const mid=(spec.low+spec.high)/2, span=Math.max(.0001,spec.high-spec.low);
-   const z=Math.abs(v-mid)/span;
-   // v7.3: reference ranges are a validation signal, never a source of invented values.
-   // Give a strong preference to visually-read candidates near a plausible clinical range,
-   // while still allowing abnormal values to survive when OCR evidence is strong.
-   if(z<=.75)score+=34; else if(z<=1.5)score+=22; else if(z<=3)score+=5; else if(z<=5)score-=18; else score-=55;
- }else if(spec.high!=null){
-   if(v<=spec.high*1.2)score+=22; else if(v<=spec.high*2.5)score+=7; else if(v>spec.high*6)score-=45;
- }else if(spec.low!=null){
-   if(v>=spec.low*.75)score+=18; else if(v>=spec.low*.35)score+=2; else score-=35;
- }
- return score;
-}
-function v73DigitCount(raw){return (String(raw||'').match(/\d/g)||[]).length}
-function v73TokenSpecificity(spec,c){
- const digits=v73DigitCount(c.raw),hasDot=String(c.raw).includes('.'); let b=Math.min(30,digits*5);
- if(spec.shape==='decimal')b+=hasDot?24:-14;
- // Single-digit truncation is a common OCR failure for result cells (59→5, 20→1, 99→3).
- // Do not reject it outright, but make a fuller plausible token win whenever present.
- if(digits===1&&!hasDot)b-=18;
- if(digits>=2)b+=6;
- if(digits>=3)b+=4;
- return b;
-}
-function v71CandidateScore(spec,c,confidence=0){
- if(c.v<spec.min||c.v>spec.max||v65IsRefValue(spec,c.v))return -999;
- let score=18+Math.max(0,Math.min(18,confidence/5))+v72RefPlausibility(spec,c.v)+v73TokenSpecificity(spec,c);
- const hasDot=c.raw.includes('.');
- if(spec.name==='WBC'){ if(c.v>=3&&c.v<=20)score+=24; if(hasDot)score+=16; if(c.v>30||c.v<1)score-=40; }
- if(spec.name==='Hb'){ if(c.v>=8&&c.v<=22)score+=28; if(hasDot)score+=14; if(c.v<7)score-=55; }
- if(spec.name==='Hct'){ if(c.v>=25&&c.v<=65)score+=28; if(hasDot)score+=14; if(c.v<20||c.v>70)score-=45; }
- if(spec.name==='LDL-C'){ if(c.v>=20&&c.v<=400)score+=24; if(c.v<20)score-=60; }
- if(spec.name==='eGFR'){ if(c.v>=20&&c.v<=200)score+=28; if(c.v<10)score-=70; }
- if(spec.name==='Creatinine'){ if(c.v>=.2&&c.v<=3)score+=30; if(hasDot)score+=22; if(c.v>3.5)score-=65; }
- if(spec.name==='SGPT (ALT)'||spec.name==='SGOT (AST)'){ if(c.v>=5&&c.v<=400)score+=22; if(c.v<3)score-=35; }
- if(spec.name==='Alk-phos'){ if(c.v>=20&&c.v<=500)score+=28; if(c.v>700)score-=70; }
- if(spec.name==='HbA1c'){ if(c.v>=3&&c.v<=18)score+=30; if(hasDot)score+=20; }
- if(spec.name==='PSA'){ if(c.v>=0&&c.v<=30)score+=18; if(hasDot)score+=28; if(c.v>50)score-=55; }
- if(spec.name==='Triglyceride'||spec.name==='Cholesterol'||spec.name==='HDL-C'||spec.name==='Platelet'){
-   if(v73DigitCount(c.raw)>=2)score+=12;
- }
- const ph=v73PrecisionHint(spec);if(ph>0){const dec=String(c.raw).split('.')[1]?.length||0;if(dec===ph)score+=16;else if(dec>ph)score-=12;if(c.derived)score+=8;}
- return score;
-}
-function v71PickBest(spec,reads){
- const all=[];
- for(const r of reads){for(const c of v71NumericTokens(r.raw,spec))all.push({...c,confidence:r.confidence||0,pass:r.pass||''});}
- if(!all.length)return null;
- const grouped=new Map();
- for(const c of all){
-   const k=String(c.v),base=v71CandidateScore(spec,c,c.confidence); if(base<=-500)continue;
-   const g=grouped.get(k)||{v:c.v,raw:c.raw,count:0,score:0,maxBase:-999,passes:[],digits:v73DigitCount(c.raw)};
-   g.count++;g.score+=base;g.maxBase=Math.max(g.maxBase,base);g.passes.push(c.pass);g.digits=Math.max(g.digits,v73DigitCount(c.raw));grouped.set(k,g)
- }
- const vals=[...grouped.values()]; if(!vals.length)return null;
- // v7.3 prefix-truncation guard: if a plausible richer token exists, penalize candidates
- // that look like a one/two-digit fragment from the same cell.
- for(const g of vals){
-   for(const h of vals){if(g===h)continue; const gs=String(g.raw),hs=String(h.raw);
-     if(h.digits>g.digits && (hs.startsWith(gs)||hs.endsWith(gs)||g.digits===1)) g.score-=22;
-   }
- }
- vals.sort((a,b)=>((b.count>=2?48:0)+b.score+b.maxBase)-( (a.count>=2?48:0)+a.score+a.maxBase));
- const best=vals[0],second=vals[1];
- best.margin=second?((best.count>=2?48:0)+best.score+best.maxBase)-((second.count>=2?48:0)+second.score+second.maxBase):999;
- return best;
-}
-function v73CenterCrop(canvas,frac=.10){
- const x=Math.round(canvas.width*frac),y=Math.round(canvas.height*.05),w=Math.max(2,canvas.width-2*x),h=Math.max(2,canvas.height-2*y);
- const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(canvas,x,y,w,h,0,0,w,h);return c;
-}
-function v72EraseRules(canvas){
- const ctx=canvas.getContext('2d',{willReadFrequently:true}),im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data,w=canvas.width,h=canvas.height;
- const dark=(x,y)=>{const i=(y*w+x)*4;return d[i]<90};
- const cols=[];for(let x=0;x<w;x++){let n=0;for(let y=0;y<h;y++)if(dark(x,y))n++;if(n>h*.72)cols.push(x)}
- const rows=[];for(let y=0;y<h;y++){let n=0;for(let x=0;x<w;x++)if(dark(x,y))n++;if(n>w*.72)rows.push(y)}
- for(const x of cols)for(let xx=Math.max(0,x-2);xx<=Math.min(w-1,x+2);xx++)for(let y=0;y<h;y++){let i=(y*w+xx)*4;d[i]=d[i+1]=d[i+2]=255}
- for(const y of rows)for(let yy=Math.max(0,y-2);yy<=Math.min(h-1,y+2);yy++)for(let x=0;x<w;x++){let i=(yy*w+x)*4;d[i]=d[i+1]=d[i+2]=255}
- ctx.putImageData(im,0,0);return canvas;
-}
-function v72CellSpec(name){
- const lower=name==='HbA1c'||name==='PSA';
- return lower?{x:[.145,.205],half:.0050}:{x:[.242,.318],half:.0058};
-}
-async function v71RecognizeCell(worker,crop,spec,tag){
- const reads=[];
- const configs=[
-   {psm:'7',wl:'0123456789.',pass:tag+'-line'},
-   {psm:'8',wl:'0123456789.',pass:tag+'-word'},
-   {psm:'10',wl:'0123456789.',pass:tag+'-char'},
-   {psm:'13',wl:'0123456789.',pass:tag+'-raw'}
- ];
- for(const cfg of configs){
-   try{await worker.setParameters({tessedit_pageseg_mode:cfg.psm,tessedit_char_whitelist:cfg.wl,preserve_interword_spaces:'0'});const r=await worker.recognize(crop);reads.push({raw:(r.data?.text||'').trim(),confidence:r.data?.confidence||0,pass:cfg.pass});}catch(e){}
- }
- return reads;
-}
-async function v68ExtractTemplateRows(file,rotation,baseText){
- const base=await v622CanvasFromFile(file,rotation||0,'soft');
- if(!v68TemplateLikely(baseText,base))return [];
- const worker=await getOcrWorker(),rows=[];
- for(let i=0;i<V68_TEMPLATE_ROWS.length;i++){
-   const [name,y]=V68_TEMPLATE_ROWS[i],spec=V65_LABS.find(x=>x.name===name);if(!spec)continue;
-   setOcrProgress(`V7.3 อ่านตัวเลขช่อง Result ${i+1}/${V68_TEMPLATE_ROWS.length}: ${name}`,74+Math.round(22*(i+1)/V68_TEMPLATE_ROWS.length));
-   const cs=v72CellSpec(name), reads=[];
-   const plans=[
-     {x0:cs.x[0],x1:cs.x[1],dy:0,variant:'soft',tag:'iso-soft'},
-     {x0:cs.x[0]+.004,x1:cs.x[1]-.004,dy:-.0002,variant:'contrast',tag:'iso-contrast'},
-     {x0:cs.x[0]-.003,x1:cs.x[1]+.003,dy:.0002,variant:'binary',tag:'iso-binary'},
-     {x0:cs.x[0]+.008,x1:cs.x[1]-.008,dy:0,variant:'soft',tag:'tight-soft'},
-     {x0:cs.x[0]+.008,x1:cs.x[1]-.008,dy:0,variant:'contrast',tag:'tight-contrast'}
-   ];
-   for(const ps of plans){
-     let crop=v68CropCanvas(base,ps.x0,y-cs.half+ps.dy,ps.x1,y+cs.half+ps.dy,ps.variant);crop=v72EraseRules(crop);
-     reads.push(...await v71RecognizeCell(worker,crop,spec,ps.tag));
-     // A second recognition on the center-only region helps remove surviving border rules / handwriting.
-     const center=v73CenterCrop(crop,.08);reads.push(...await v71RecognizeCell(worker,center,spec,ps.tag+'-center'));
-   }
-   const winner=v71PickBest(spec,reads);
-   let cropPreview='';try{cropPreview=v68CropCanvas(base,cs.x[0]-.008,y-cs.half-.001,cs.x[1]+.008,y+cs.half+.001,'soft').toDataURL('image/jpeg',.86)}catch(e){}
-   if(!winner){rows.push({selected:false,name:spec.name,value:'',unit:spec.unit,date:v622ParseDate(baseText),range:v65ReferenceMeta(spec).range,refLow:spec.low,refHigh:spec.high,refMode:v65ReferenceMeta(spec).mode,category:spec.cat,confidence:'low',reviewRequired:true,qualityReason:'V7.3: ช่อง Result ยังอ่านตัวเลขที่เชื่อถือได้ไม่ได้ • เว้นว่างแทนการเดา',ocrCropPreview:cropPreview,ocrCellText:reads.map(a=>`${a.pass}:${a.raw||'∅'}`).join(' | '),sourceMode:'v7.3-numeric-result',ocrConsensus:false});continue;}
-   const value=String(winner.v),ref=v65ReferenceMeta(spec),vv=winner.v;
-   const strong=winner.count>=2;
-   const suspicious=(spec.name==='Hb'&&vv<7)||(spec.name==='WBC'&&(vv<1||vv>30))||(spec.name==='LDL-C'&&vv<20)||(spec.name==='eGFR'&&vv<10)||(spec.name==='Creatinine'&&vv>5)||(spec.name==='Hct'&&vv<20)||(spec.name==='Alk-phos'&&vv>1000)||(spec.name==='PSA'&&vv>100);
-   rows.push({selected:false,name:spec.name,value:suspicious?'':value,unit:spec.unit,date:v622ParseDate(baseText),range:ref.range,refLow:spec.low,refHigh:spec.high,refMode:ref.mode,category:spec.cat,
-     confidence:(strong&&!suspicious)?'high':'low',reviewRequired:true,
-     qualityReason:suspicious?'V7.3: OCR ได้ค่าที่ไม่น่าเชื่อถือ จึงเว้นช่อง Result ว่าง • กรุณาอ่านจากภาพ crop และกรอกเอง':(strong?'V7.3: Numeric Result OCR อ่านตัวเลขจากช่อง Result • กรุณาเทียบภาพก่อนบันทึก':'V7.3: OCR หลายโหมดอ่านไม่ตรงกัน • แสดงค่าที่ดีที่สุดแต่ยังต้องตรวจภาพ'),
-     ocrCropPreview:cropPreview,ocrCellText:reads.map(a=>`${a.pass}:${a.raw||'∅'}`).join(' | '),sourceMode:'v7.3-numeric-result',ocrConsensus:strong});
- }
- try{await worker.setParameters({tessedit_pageseg_mode:'6',tessedit_char_whitelist:'',preserve_interword_spaces:'1'});}catch(e){}
- return rows;
-}
-function v68MergeRows(textRows,templateRows){
- const by=new Map();for(const r of textRows||[])by.set(r.name,r);
- for(const r of templateRows||[]){
-   const old=by.get(r.name);
-   // v7.2: isolated result-cell OCR has priority only when it produced a plausible numeric value.
-   // Suspicious/blank crop results never inherit a dangerous value from full-page OCR.
-   if(r.value!==''&&v63PlausibleRow(r)){
-     if(old&&String(old.value)!==String(r.value)){r.confidence='low';r.reviewRequired=true;r.qualityReason='V7.3: Result-cell OCR และ full-page OCR อ่านไม่ตรงกัน • ใช้ค่าจากช่อง Result เป็นหลักแต่ต้องตรวจภาพ';}
-     by.set(r.name,r);
-   }else{
-     by.set(r.name,r); // keep blank + proof image instead of a guessed full-page value
-   }
- }
- return [...by.values()];
-}
-function v622RenderDocumentMeta(){
- const docs=docImportState.docs||[]; const badge=id('docTypeBadge'),sel=id('docTypeSelect'),sum=id('docStructuredSummary');
- if(!docs.length){if(badge)badge.textContent='ยังไม่พบ';return}
- if(docs.length===1){const d=docs[0];if(badge)badge.textContent=V622_DOC_LABELS[d.type]||d.type;if(sel)sel.value=d.type;if(sum)sum.value=d.summary||''}
- else{if(badge)badge.textContent=`${docs.length} เอกสาร`;if(sum)sum.value=docs.map((d,i)=>`[${i+1}] ${d.name} • ${V622_DOC_LABELS[d.type]}\n${d.summary||''}`).join('\n\n')}
-}
-function v622RenderMedicalDocuments(){
- const host=id('medicalDocumentList');if(!host)return;const docs=db.documents||[];
- host.innerHTML=docs.length?docs.slice().reverse().map(d=>`<div class="doc-card"><strong>${esc(d.name||'Medical document')}</strong><span class="doc-kind">${esc(V622_DOC_LABELS[d.type]||d.type||'Other')}</span><small>${esc(d.date||'')} • ${esc(d.summary||'ไม่มีสรุป')}</small></div>`).join(''):'<p class="muted">ยังไม่มีเอกสารทางการแพทย์ที่บันทึก</p>';
-}
-async function v622ProcessFiles(files){
- const arr=[...files]; if(!arr.length)return;
- docImportState.file=arr[0];docImportState.files=arr;docImportState.rows=[];docImportState.docs=[];docImportState.text='';
- if(id('ocrResultArea'))id('ocrResultArea').style.display='none';
- if(id('labDocPreview'))id('labDocPreview').innerHTML=`<div class="pdf-preview"><strong>กำลังอ่าน ${arr.length} ไฟล์</strong><div class="import-file-queue">${arr.map(f=>`<small>• ${esc(f.name)}</small>`).join('')}</div></div>`;
- try{
-   for(let i=0;i<arr.length;i++){
-     const file=arr[i];setOcrProgress(`กำลังอ่านไฟล์ ${i+1}/${arr.length}: ${file.name}`,Math.round(i/arr.length*90));let text='',rotation=0,confidence=null;
-     if(file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf'))text=await extractPdf(file);
-     else if(file.type.startsWith('image/')){const r=await v622OcrImage(file);text=r.text;rotation=r.rotation;confidence=r.confidence}
-     else continue;
-     text=normalizeOcrText(text);const type=v622Classify(text),summary=v622Summary(type,text),date=v622ParseDate(text);
-     docImportState.docs.push({name:file.name,type,summary,date,text,rotation,confidence});docImportState.text+=(docImportState.text?'\n\n':'')+`===== ${file.name} =====\n${text}`;
-     if(type==='lab'){
-       const textRows=detectLabRowsFromText(text);
-       let templateRows=[];
-       if(file.type.startsWith('image/')){try{templateRows=await v68ExtractTemplateRows(file,rotation,text)}catch(e){console.warn('V6.8 calibrated OCR fallback',e)}}
-       docImportState.rows.push(...v68MergeRows(textRows,templateRows));
-     }
-   }
-   // dedupe detected lab rows across multiple pages/files
-   const seen=new Set();docImportState.rows=docImportState.rows.filter(r=>{const k=cleanName(r.name)+'|'+r.value+'|'+r.date;if(seen.has(k))return false;seen.add(k);return true});
-   if(id('ocrRawText'))id('ocrRawText').value=docImportState.text;if(id('ocrResultArea'))id('ocrResultArea').style.display='block';
-   setOcrProgress('อ่านเอกสารเสร็จแล้ว — V7.3 • Numeric Result Recognition Engine: crop ช่อง Result + ตัดเส้น + หลาย preprocessing + ป้องกันเลขตกหล่น',100);v622RenderDocumentMeta();renderDetectedRows();
-   if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').disabled=!(docImportState.rows.some(r=>r.selected)||docImportState.docs.length);
- }catch(err){console.error(err);setOcrProgress('อ่านเอกสารไม่สำเร็จ',0);if(id('ocrResultArea'))id('ocrResultArea').style.display='block';alert('อ่านเอกสารไม่สำเร็จ: '+(err?.message||err))}
-}
-function v622Reset(){
- const w=docImportState.worker;docImportState={file:null,files:[],text:'',rows:[],docs:[],worker:w};window.docImportState=docImportState;
- if(id('labDocFile'))id('labDocFile').value='';if(id('labDocPreview'))id('labDocPreview').innerHTML='<div class="muted">ยังไม่ได้เลือกไฟล์</div>';if(id('ocrProgressWrap'))id('ocrProgressWrap').style.display='none';if(id('ocrResultArea'))id('ocrResultArea').style.display='none';if(id('ocrRawText'))id('ocrRawText').value='';if(id('docStructuredSummary'))id('docStructuredSummary').value='';renderDetectedRows();
-}
-
-if(id('labDocFile'))id('labDocFile').onchange=e=>v622ProcessFiles(e.target.files||[]);
-if(id('detectLabsBtn'))id('detectLabsBtn').onclick=()=>{docImportState.text=id('ocrRawText').value;docImportState.rows=detectLabRowsFromText(docImportState.text);const type=v622Classify(docImportState.text);if(docImportState.docs?.length===1){docImportState.docs[0].type=type;docImportState.docs[0].summary=v622Summary(type,docImportState.text)}v622RenderDocumentMeta();renderDetectedRows();if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').disabled=!(docImportState.rows.some(r=>r.selected)||docImportState.docs?.length)};
-if(id('docTypeSelect'))id('docTypeSelect').onchange=e=>{if(docImportState.docs?.length===1){docImportState.docs[0].type=e.target.value;docImportState.docs[0].summary=v622Summary(e.target.value,id('ocrRawText')?.value||'');v622RenderDocumentMeta()}};
-if(id('docStructuredSummary'))id('docStructuredSummary').oninput=e=>{if(docImportState.docs?.length===1)docImportState.docs[0].summary=e.target.value};
-if(id('clearOcrBtn'))id('clearOcrBtn').onclick=v622Reset;
-if(id('confirmDetectedLabsBtn'))id('confirmDetectedLabsBtn').onclick=()=>{
- const chosen=(docImportState.rows||[]).filter(r=>r.selected&&String(r.name).trim()&&String(r.value).trim()&&v63PlausibleRow(r));const docs=docImportState.docs||[];if(!chosen.length&&!docs.length)return alert('ยังไม่มีข้อมูลที่พร้อมบันทึก');
- let added=0;for(const r of chosen){const row={id:Date.now()+added,name:String(r.name).trim(),value:String(r.value).trim(),unit:String(r.unit||'').trim(),date:r.date||new Date().toISOString().slice(0,10),range:r.range||'',refLow:r.refLow??null,refHigh:r.refHigh??null,refMode:r.refMode||'none',category:r.category||'auto',source:'document-import-v7.0',sourceFile:docImportState.file?.name||'',importStatus:'confirmed'};const dup=db.labs.some(x=>x.importStatus!=='rejected'&&cleanName(x.name)===cleanName(row.name)&&String(x.value)===String(row.value)&&String(x.date)===String(row.date));if(!dup){db.labs.push(row);added++;}}
- for(let i=0;i<docs.length;i++){const d=docs[i];db.documents.push({id:Date.now()+1000+i,name:d.name,type:d.type,date:d.date,summary:d.summary||'',source:'document-import-v7.0',ocrRotation:d.rotation||0,ocrConfidence:d.confidence??null})}
- save();renderAnalysis();v622RenderMedicalDocuments();alert(`บันทึกสำเร็จ: ผลตรวจ ${added} รายการ • เอกสาร ${docs.length} ไฟล์`);v622Reset();
-};
-const __renderAllV622=renderAll;renderAll=function(){__renderAllV622();v622RenderMedicalDocuments()};
-window.docImportState=docImportState;window.renderDetectedRows=renderDetectedRows;renderAll();
-
-// ---------- v6.4 Data Quality Gate ----------
-function v64QuarantineLegacyOcr(){
- let n=0;
- db.labs=(db.labs||[]).map(l=>{
-  if(String(l?.source||'').startsWith('document-import-v6.') && !['document-import-v6.4','document-import-v6.5'].includes(l.source) && l.importStatus!=='needs-review'){
-   n++; return {...l,importStatus:'needs-review',qualityReason:'Legacy OCR import quarantined manually in v6.5'};
-  }
-  return l;
- });
- save();renderQuality();renderAnalysis();renderDoctor();
- alert(n?`กักกันข้อมูล OCR เก่า ${n} รายการแล้ว\nข้อมูลเหล่านี้จะไม่ถูกใช้ในผลตรวจ, Health Analysis หรือ Doctor Report`:'ไม่มีข้อมูล OCR เก่าที่ยังต้องกักกัน');
-}
-if(id('cleanOcrImportsBtn')) id('cleanOcrImportsBtn').onclick=v64QuarantineLegacyOcr;
+function renderAll(){renderDashboard();renderRecords();renderMeds();renderFiles();loadSettings()}
+renderAll();syncBadge();setImportStep(1);

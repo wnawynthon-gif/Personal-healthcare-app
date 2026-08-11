@@ -1,0 +1,4 @@
+date,type,value,value2,unit,note
+2026-08-11T08:00:00,blood_pressure,128,82,mmHg,morning
+2026-08-11T08:05:00,weight,80,,kg,
+2026-08-11T08:10:00,pulse,72,,bpm,resting

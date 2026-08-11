@@ -1,81 +1,58 @@
-# Personal Healthcare App v7.3
+# Personal Healthcare v8.0
 
-**Build ID:** `7.3.0-20260810`  
-**OCR engine:** V7.3 Numeric Result Recognition Engine
+เวอร์ชันนี้สร้างใหม่ให้ Import เสถียรกว่าเดิม โดยไม่ผูกการ Save กับการตรวจไฟล์ทั้งก้อน
 
-## New in v7.3
-- Keeps the V7.2 calibrated Result-cell geometry and proof-image preview.
-- Adds tighter center crops and extra OCR segmentation modes to reduce border/table-line interference.
-- Restores dropped decimal points using per-test numeric-format hints (for example 691 → 6.91 only when the test expects two decimals).
-- Penalizes truncated one-digit candidates when a richer plausible token is present (for example 59 should beat 5).
-- Uses laboratory reference ranges only as a validation signal, never as a source for inventing a result.
-- Suspicious or unresolved values remain blank/review-only instead of being auto-saved.
+## จุดสำคัญใน v8.0
+- Import Center 3 ขั้น: Upload → Review/Mapping → Save
+- CSV parser รองรับ quoted fields และ comma ในข้อความ
+- JSON import
+- Auto column mapping + เปลี่ยน mapping เองได้
+- Preview และแก้ไขค่าก่อน Save
+- Row-level validation: แถวเสียไม่ทำให้แถวดีบันทึกไม่ได้
+- Duplicate detection
+- Local autosave ด้วย localStorage
+- Optional Supabase REST sync
+- Dashboard น้ำหนัก / ความดัน / ชีพจร
+- SVG trend charts ไม่ต้องใช้ library ภายนอก
+- Medication list + daily reminder time
+- Document Inbox สำหรับ PDF/JPG/PNG metadata
+- JSON backup export
+- Responsive สำหรับมือถือ
 
-# Personal Healthcare App v7.1
+## เปิดใช้งาน
+1. เปิด `index.html` ได้ทันที หรือ deploy โฟลเดอร์นี้ขึ้น Vercel/GitHub Pages
+2. ถ้าจะใช้ Supabase:
+   - รัน `supabase_schema_v8.sql`
+   - เปิด Settings
+   - ใส่ Project URL และ Anon Key
+   - ทดสอบการเชื่อมต่อ
 
-**Build ID:** `7.1.0-20260810`  
-**OCR engine:** V7.1 Crop-First Result Engine
+## CSV Template
+คอลัมน์แนะนำ:
+`date,type,value,value2,unit,note`
 
-## New in v7.1
-- Corrected Result-row geometry using the supplied Golden Jubilee/Mahidol source report.
-- Result OCR crop no longer overlaps Reference/Interpretation columns.
-- Preview shows the original Result-cell image beside each extracted value.
-- Suspicious or conflicting OCR stays review-only and is never auto-selected.
+ตัวอย่าง:
+`2026-08-11T08:00:00,blood_pressure,128,82,mmHg,morning`
 
-# Personal Healthcare App v6.9
+ประเภทที่รองรับ:
+- weight
+- blood_pressure
+- pulse
+- glucose
+- lab
+- exercise
+- note
 
-**Build ID:** `6.9.0-20260810`  
-**OCR engine:** V6.8 Calibrated Multi-pass
+## หมายเหตุด้านสุขภาพ
+ระบบเป็นเครื่องมือช่วยจัดข้อมูลและเตือนแนวโน้ม ไม่ใช่การวินิจฉัยโรค
+เกณฑ์ความดันใน UI ใช้เพื่อ flag ให้ติดตาม:
+- NHS: ความดันที่บ้าน 135/85 mmHg ขึ้นไปถือว่าสูง
+- ค่ามากกว่า 180/120 mmHg ต้องวัดซ้ำและประเมินอาการ; ถ้ามีอาการฉุกเฉินให้ขอความช่วยเหลือฉุกเฉินทันที
 
-## New in v6.9
-- Deployment/cache guard for GitHub Pages and Safari/iPad.
-- Visible runtime Build ID and stale-build detector.
-- One-click cache clear + reload.
+## สิ่งที่ v8.0 ยังไม่ทำ
+- OCR PDF/รูปใน browser แบบออฟไลน์
+- Push notification ระดับระบบ
+- Supabase Auth onboarding UI
+- Storage upload binary ไป Supabase Storage
 
-# Personal Healthcare App v6.9
-
-## New in v6.9
-
-### Smart Lab Importer v6.5
-- Multi-pass OCR for photographed/HEIC laboratory reports, including a high-contrast numeric pass.
-- Canonical medical-test dictionary and reference-value collision protection.
-- Ambiguous OCR values are never selected automatically and are labelled for manual review.
-- Reference ranges stay separate from patient results (range / max / min modes).
-- Confirmed v6.5 imports are excluded from legacy OCR quarantine.
-- Multi-file image/PDF import
-- Auto document classification: lab/health check, chest X-ray, ultrasound, ECG, other
-- Image preprocessing and automatic 90°/270° OCR retry when confidence is poor
-- More robust known-lab extraction from Thai/English health-check forms
-- Structured Findings/Impression/ECG summary saved separately from lab rows
-- Imported medical-document history
-- Import remains review-first: user can edit text, document type, summary, and rows before save
-
-- iPad/Safari OCR fix: explicit worker/core/language paths + English fallback
-- OCR failures now show the real error and keep manual review available
-- Service worker changed to network-first for app updates
-- Image OCR in the browser with Tesseract.js (English + Thai)
-- PDF text extraction with PDF.js
-- OCR fallback for scanned PDF pages
-- Raw extracted text preview
-- Heuristic lab-row detection
-- Editable Preview before confirmation
-- Select/unselect detected results
-- Reference low/high fields before saving
-- Confirmed results feed the existing Health Analysis engine
-- Source file name stored with imported lab records
-- Existing Supabase sync, RLS, BP, weight, medication, reminders and Doctor Report remain compatible
-
-## Privacy behavior
-The selected document is read locally in the browser. It is not uploaded to Supabase merely by selecting it.
-Only confirmed extracted lab records become part of the health database and can then be synced by the existing Supabase sync controls.
-
-## Important OCR limitations
-- OCR is not guaranteed to read every laboratory layout correctly.
-- Always verify test name, result, unit and reference range in Preview before confirming.
-- PDF files with an embedded text layer are generally more reliable than photos/scans.
-- HEIC support depends on Safari/iOS decoding support.
-- Internet is needed the first time OCR/PDF libraries and OCR language data are loaded.
-
-## Deploy
-Upload all v6.2 files to the existing GitHub Pages repository root and replace the older v6/v6.1 files.
-No new Supabase project or table is required.
+ไฟล์เหล่านี้วางโครงไว้ให้เพิ่มใน v8.1 ได้โดยไม่ต้องรื้อ Import Center
