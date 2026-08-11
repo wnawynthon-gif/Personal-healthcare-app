@@ -1,3 +1,16 @@
+# Personal Healthcare App v7.3
+
+**Build ID:** `7.3.0-20260810`  
+**OCR engine:** V7.3 Numeric Result Recognition Engine
+
+## New in v7.3
+- Keeps the V7.2 calibrated Result-cell geometry and proof-image preview.
+- Adds tighter center crops and extra OCR segmentation modes to reduce border/table-line interference.
+- Restores dropped decimal points using per-test numeric-format hints (for example 691 → 6.91 only when the test expects two decimals).
+- Penalizes truncated one-digit candidates when a richer plausible token is present (for example 59 should beat 5).
+- Uses laboratory reference ranges only as a validation signal, never as a source for inventing a result.
+- Suspicious or unresolved values remain blank/review-only instead of being auto-saved.
+
 # Personal Healthcare App v7.1
 
 **Build ID:** `7.1.0-20260810`  

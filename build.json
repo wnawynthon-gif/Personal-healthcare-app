@@ -1,5 +1,5 @@
 {
-  "version": "V7.2.1",
-  "buildId": "7.2.1-20260810",
-  "ocrEngine": "V7.2.1 Cell-Isolated Numeric Engine"
+  "version": "V7.3",
+  "buildId": "7.3.0-20260810",
+  "ocrEngine": "V7.3 Numeric Result Recognition Engine"
 }
