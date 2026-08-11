@@ -94,3 +94,5 @@ Security:
 - Calls go through a Supabase Edge Function.
 - The browser sends compressed JPEG data to the function.
 - Structured output forces consistent fields for health results.
+  
+Deploy v8.2
