@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v8.1.1</title>
+  <title>Personal Healthcare v8.2</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -13,13 +13,14 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v8.1.1 • Smart Import Hotfix</small></div>
+      <div><strong>Personal Healthcare</strong><small>v8.2 • AI Health Report</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
       <button class="nav" data-view="records">ข้อมูลสุขภาพ</button>
       <button class="nav" data-view="import">นำเข้าข้อมูล</button>
       <button class="nav" data-view="meds">ยา & เตือน</button>
+      <button class="nav" data-view="ai">AI วิเคราะห์ผลตรวจ</button>
       <button class="nav" data-view="files">เอกสาร</button>
       <button class="nav" data-view="settings">ตั้งค่า</button>
     </nav>
@@ -111,10 +112,10 @@
           <h3>Import Center</h3>
           <p class="muted">รองรับ CSV / JSON สำหรับข้อมูลตาราง และ PDF / JPG / PNG สำหรับเก็บเอกสารอ้างอิง</p>
           <label class="dropzone" id="dropzone">
-            <input id="fileInput" type="file" multiple accept=".csv,.json,.pdf,.png,.jpg,.jpeg,image/*,application/pdf,text/csv,application/json" />
+            <input id="fileInput" type="file" multiple accept=".csv,.json,.pdf,.png,.jpg,.jpeg,.heic,.heif,image/jpeg,image/png,image/heic,image/heif,application/pdf,text/csv,application/json" />
             <div class="drop-icon">⇧</div>
             <strong>แตะเพื่อเลือกไฟล์ หรือลากไฟล์มาวาง</strong>
-            <span>CSV / JSON จะถูกอ่านเป็นข้อมูล • PDF / รูปจะเข้า Document Inbox</span>
+            <span>CSV / JSON จะถูกอ่านเป็นข้อมูล • PDF/JPG/PNG พร้อม OCR • HEIC จะเก็บได้ แต่บน iPad แนะนำ JPG/PNG เพื่อ OCR ที่เสถียร</span>
           </label>
           <div class="import-actions">
             <button class="btn ghost" id="downloadTemplate">ดาวน์โหลด CSV Template</button>
@@ -178,6 +179,89 @@
       </div>
     </section>
 
+
+    <section class="view" id="view-ai">
+      <div class="ai-hero panel">
+        <div class="ai-hero-copy">
+          <span class="ai-chip">v8.2 • Vision AI</span>
+          <h2>ถ่ายรูปผลตรวจ แล้ววิเคราะห์ทันที</h2>
+          <p>ถ่ายรูปหรือเลือกรูปผลตรวจสุขภาพได้หลายหน้า ระบบจะส่งภาพผ่าน Supabase Edge Function ไปยัง OpenAI Vision เพื่ออ่านข้อความ ตาราง ค่าอ้างอิง และสรุปสิ่งที่ควรติดตาม แล้วให้คุณตรวจยืนยันก่อนบันทึก</p>
+          <div class="notice warn"><strong>สำคัญ:</strong> AI อาจอ่านตัวเลขผิดได้ ต้องตรวจเทียบเอกสารต้นฉบับก่อนกด Save ทุกครั้ง และผลวิเคราะห์นี้ไม่ใช่การวินิจฉัยโรค</div>
+        </div>
+        <div class="ai-hero-icon">AI</div>
+      </div>
+
+      <div class="grid two ai-grid">
+        <article class="panel">
+          <div class="panel-head"><div><h3>1. ถ่ายรูป / เลือกรูป</h3><small>แนะนำให้ถ่ายตรง ไม่เบลอ มีแสงสม่ำเสมอ</small></div></div>
+          <label class="camera-card">
+            <input id="cameraInput" type="file" accept="image/*" capture="environment" multiple />
+            <div class="camera-icon">📷</div>
+            <strong>ถ่ายรูปผลตรวจ</strong>
+            <span>ใช้กล้องหลังของ iPhone/iPad</span>
+          </label>
+          <label class="gallery-card">
+            <input id="galleryInput" type="file" accept="image/*" multiple />
+            <strong>เลือกรูปจาก Photos / Files</strong>
+            <span>เลือกหลายหน้าได้ในครั้งเดียว</span>
+          </label>
+          <div id="aiPhotoGrid" class="ai-photo-grid"></div>
+          <div class="footer-actions">
+            <button class="btn ghost" id="clearAiPhotosBtn">ล้างรูป</button>
+            <button class="btn primary ai-analyze-btn" id="analyzeAiBtn" disabled>วิเคราะห์ด้วย AI</button>
+          </div>
+          <div class="ai-progress-wrap" id="aiProgressWrap" hidden>
+            <div class="ocr-progress"><span id="aiProgressBar"></span></div>
+            <small id="aiProgressText" class="muted">กำลังเตรียมรูป...</small>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><div><h3>2. ผลวิเคราะห์</h3><small>สรุปจากภาพก่อนยืนยันบันทึก</small></div></div>
+          <div id="aiEmptyState" class="ai-empty">
+            <div class="ai-empty-icon">✦</div>
+            <strong>ยังไม่มีผลวิเคราะห์</strong>
+            <span>เพิ่มรูปผลตรวจ แล้วกด “วิเคราะห์ด้วย AI”</span>
+          </div>
+          <div id="aiAnalysis" hidden>
+            <div class="ai-summary-card">
+              <div class="split">
+                <div><small>สรุป</small><h3 id="aiSummaryTitle">ผลตรวจสุขภาพ</h3></div>
+                <span id="aiOverallBadge" class="status-badge neutral">รอตรวจสอบ</span>
+              </div>
+              <p id="aiSummaryText"></p>
+            </div>
+            <div id="aiAlerts" class="stack ai-alerts"></div>
+          </div>
+        </article>
+      </div>
+
+      <article class="panel" id="aiReviewPanel" hidden>
+        <div class="panel-head split">
+          <div><h3>3. Review & Confirm</h3><small>ตรวจชื่อรายการ ค่า หน่วย และ reference range ก่อน Save</small></div>
+          <div class="row">
+            <button class="btn ghost" id="selectAllAiBtn">เลือกทั้งหมด</button>
+            <button class="btn ghost" id="deselectAllAiBtn">ไม่เลือกทั้งหมด</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ai-results-table">
+            <thead>
+              <tr><th>ใช้</th><th>รายการตรวจ</th><th>ค่า</th><th>หน่วย</th><th>Reference</th><th>สถานะ</th><th>ความมั่นใจ</th><th>หมายเหตุ</th></tr>
+            </thead>
+            <tbody id="aiResultsBody"></tbody>
+          </table>
+        </div>
+        <div class="notice info ai-save-note">
+          ระบบจะบันทึกเฉพาะรายการที่เลือก และจะเก็บข้อความ “AI extracted” ในหมายเหตุเพื่อแยกจากข้อมูลที่กรอกเอง
+        </div>
+        <div class="footer-actions">
+          <span id="aiSaveStatus" class="muted"></span>
+          <button class="btn success" id="saveAiResultsBtn">ยืนยันและบันทึกเข้า Dashboard</button>
+        </div>
+      </article>
+    </section>
+
     <section class="view" id="view-files">
       <div class="panel">
         <div class="panel-head split">
@@ -204,7 +288,26 @@
           <div class="row"><button class="btn primary" id="saveSupabase">บันทึกการตั้งค่า</button><button class="btn ghost" id="testSupabase">ทดสอบ</button></div>
           <p id="supabaseStatus" class="muted"></p>
         </div>
-        <div class="panel danger-zone">
+        
+        <div class="panel">
+          <h3>AI Health Analysis</h3>
+          <p class="muted">v8.2 ใช้ Supabase Edge Function เป็นตัวกลาง เพื่อไม่เปิดเผย OpenAI API key ใน GitHub Pages</p>
+          <label>Edge Function URL
+            <input class="input" id="aiFunctionUrl" placeholder="https://YOUR_PROJECT.supabase.co/functions/v1/analyze-health-report">
+          </label>
+          <label>Supabase Anon Key
+            <textarea class="input" id="aiAnonKey" rows="3" placeholder="eyJ..."></textarea>
+          </label>
+          <div class="row">
+            <button class="btn primary" id="saveAiConfig">บันทึก AI Config</button>
+            <button class="btn ghost" id="testAiFunction">ทดสอบ Function</button>
+          </div>
+          <p id="aiConfigStatus" class="muted"></p>
+          <div class="notice info" style="margin-top:12px;margin-bottom:0">
+            OpenAI API key ต้องเก็บเป็น Supabase secret ชื่อ <code>OPENAI_API_KEY</code> เท่านั้น ไม่ใส่ในหน้านี้
+          </div>
+        </div>
+<div class="panel danger-zone">
           <h3>Data Management</h3>
           <p class="muted">Export ก่อนล้างข้อมูลหากต้องการเก็บสำรอง</p>
           <button class="btn ghost" id="exportBtn2">Export JSON</button>
@@ -310,8 +413,6 @@
   </form>
 </dialog>
 
-<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/tesseract.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

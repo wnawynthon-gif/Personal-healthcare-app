@@ -1,4 +1,4 @@
-# Personal Healthcare v8.1.1 — Smart Import Hotfix
+# Personal Healthcare v8.2 — AI Health Report
 
 เวอร์ชันนี้สร้างใหม่ให้ Import เสถียรกว่าเดิม โดยไม่ผูกการ Save กับการตรวจไฟล์ทั้งก้อน
 
@@ -78,3 +78,19 @@
 ## v8.1.1 hotfix
 - Fixed duplicate `renderFiles()` definition that caused the legacy Document Inbox renderer to override Smart Import UI.
 - Re-uploading the same file now restores its binary into IndexedDB instead of creating another duplicate card.
+
+## v8.1.2
+- Handles ERR_LIBHEIF on iPad with a clear fallback instead of a dead-end error.
+- JPG/PNG are the recommended OCR input on iPad; HEIC can still be stored in Document Inbox.
+- PDF/CSV/JSON import remains supported.
+
+
+## v8.2
+Primary workflow:
+`Camera / Photos → OpenAI Vision → structured health results → Review & Confirm → Dashboard`
+
+Security:
+- OpenAI API key is NOT stored in GitHub Pages.
+- Calls go through a Supabase Edge Function.
+- The browser sends compressed JPEG data to the function.
+- Structured output forces consistent fields for health results.

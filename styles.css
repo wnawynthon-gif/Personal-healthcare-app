@@ -34,3 +34,22 @@ dialog{border:0;border-radius:15px;padding:0;box-shadow:0 20px 60px rgba(0,0,0,.
 .ocr-progress-wrap{margin-top:10px}.ocr-progress{height:8px;background:#e6eeeb;border-radius:999px;overflow:hidden;margin-bottom:5px}.ocr-progress span{height:100%;width:0;background:linear-gradient(90deg,#0b6b57,#42b28f);display:block;transition:width .2s}
 .detect-table{min-width:900px}.detect-table input,.detect-table select{min-width:88px;padding:6px 7px;border:1px solid var(--line);border-radius:7px}.detect-table .date-input{min-width:155px}.detect-table .note-input{min-width:160px}
 @media(max-width:900px){.ocr-layout{grid-template-columns:1fr}.ocr-preview{height:320px}.wide-dialog{width:96vw}}
+
+/* v8.2 AI Health Report */
+.ai-hero{display:flex;justify-content:space-between;gap:20px;align-items:center;background:linear-gradient(135deg,#f1fbf7,#eef5ff)}
+.ai-hero-copy{max-width:820px}.ai-hero h2{font-size:28px;margin:8px 0}.ai-hero p{color:var(--muted);line-height:1.65}
+.ai-chip{display:inline-block;background:#0b6b57;color:white;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:750}
+.ai-hero-icon{min-width:100px;height:100px;border-radius:26px;background:linear-gradient(145deg,#0b6b57,#3f78d3);display:grid;place-items:center;color:white;font-size:34px;font-weight:900;box-shadow:0 15px 35px rgba(11,107,87,.22)}
+.ai-grid{margin-top:14px}
+.camera-card,.gallery-card{border:1.5px dashed #a8c9c0;border-radius:14px;background:#f7fcfa;padding:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;cursor:pointer;margin-bottom:10px}
+.camera-card{min-height:150px}.camera-card input,.gallery-card input{display:none}.camera-icon{font-size:34px;margin-bottom:8px}.camera-card span,.gallery-card span{color:var(--muted);font-size:12px;margin-top:3px}
+.gallery-card{min-height:76px}
+.ai-photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.ai-photo{position:relative;aspect-ratio:4/3;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#eef3f1}.ai-photo img{width:100%;height:100%;object-fit:cover}.ai-photo button{position:absolute;right:6px;top:6px;border:0;border-radius:50%;width:25px;height:25px;background:rgba(0,0,0,.68);color:white;cursor:pointer}
+.ai-empty{min-height:280px;border:1px dashed var(--line);border-radius:14px;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--muted);gap:6px}.ai-empty-icon{font-size:40px;color:#499b83}
+.ai-summary-card{border:1px solid var(--line);border-radius:13px;padding:14px;background:#fbfdfc}.ai-summary-card h3{margin:3px 0}.ai-summary-card p{line-height:1.6;margin-bottom:0}
+.status-badge{border-radius:999px;padding:5px 9px;font-size:11px;font-weight:750}.status-badge.normal{background:#e6f5ef;color:#087052}.status-badge.follow_up{background:#fff2da;color:#98600b}.status-badge.urgent{background:#ffe5e7;color:#ad2633}.status-badge.neutral{background:#eef1f0;color:#64746f}
+.ai-alerts{margin-top:10px}.ai-alert{padding:11px;border-radius:11px;border:1px solid var(--line)}.ai-alert.urgent{background:#fff0f1;border-color:#f0c4c8}.ai-alert.follow_up{background:#fff8e8;border-color:#efdcae}.ai-alert.info{background:#eef6ff;border-color:#d5e6fa}
+.ai-results-table{min-width:980px}.ai-results-table input,.ai-results-table select{border:1px solid var(--line);border-radius:7px;padding:6px;min-width:90px}.ai-results-table .ai-name{min-width:180px}.ai-results-table .ai-ref{min-width:120px}.ai-results-table .ai-note{min-width:180px}
+.confidence{display:inline-block;border-radius:999px;padding:3px 7px;font-size:10px;background:#edf3f1}.confidence.high{color:#087052}.confidence.medium{color:#8a5b0a}.confidence.low{color:#a52c38}
+.ai-progress-wrap{margin-top:12px}.ai-analyze-btn:disabled{opacity:.45;cursor:not-allowed}.ai-save-note{margin-top:12px}
+@media(max-width:900px){.ai-hero-icon{display:none}.ai-photo-grid{grid-template-columns:repeat(2,1fr)}}

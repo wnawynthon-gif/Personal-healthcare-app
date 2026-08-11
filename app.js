@@ -25,6 +25,7 @@ function go(view){
     records:["ข้อมูลสุขภาพ","บันทึกและจัดการข้อมูลสุขภาพแบบโครงสร้าง"],
     import:["นำเข้าข้อมูล","Import Center v8.0 — ตรวจและแก้ไขก่อนบันทึก"],
     meds:["ยา & เตือน","ช่วยจัดรายการยาและเวลาเตือน"],
+    ai:["AI วิเคราะห์ผลตรวจ","ถ่ายรูปผลตรวจ → AI วิเคราะห์ → ตรวจยืนยัน → Save"],
     files:["Document Inbox","เก็บ PDF และรูปเอกสารสุขภาพ"],
     settings:["ตั้งค่า","การซิงก์และการจัดการข้อมูล"]
   }[view];
@@ -339,7 +340,10 @@ async function supabaseInsert(table,rows){
   const c=getCfg();const res=await fetch(`${c.url}/rest/v1/${table}`,{method:"POST",headers:{apikey:c.key,Authorization:`Bearer ${c.key}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify(rows)});
   if(!res.ok)throw new Error(`${res.status} ${await res.text()}`);return true;
 }
-function loadSettings(){const c=getCfg();$("#supabaseUrl").value=c.url||"";$("#supabaseKey").value=c.key||""}
+function loadSettings(){
+  const c=getCfg();$("#supabaseUrl").value=c.url||"";$("#supabaseKey").value=c.key||"";
+  const a=getAiCfg(); if($("#aiFunctionUrl"))$("#aiFunctionUrl").value=a.functionUrl||deriveAiFunctionUrl(c.url||""); if($("#aiAnonKey"))$("#aiAnonKey").value=a.anonKey||c.key||"";
+}
 
 function renderAll(){renderDashboard();renderRecords();renderMeds();renderFiles();loadSettings()}
 renderAll();syncBadge();setImportStep(1);
@@ -407,8 +411,14 @@ async function openSmartDoc(id,runOcr=true){
       if(runOcr)await smartReadImage(imgBlob);
     }
   }catch(e){
-    $("#ocrStatus").textContent="อ่านไฟล์ไม่สำเร็จ: "+e.message;
-    setOcrProgress(0,"เกิดข้อผิดพลาด");
+    const heic=isHeicDoc(doc);
+    if(heic){
+      $("#ocrPreview").innerHTML=`<div class="notice warn"><strong>iPad อ่าน HEIC ไฟล์นี้ไม่ได้</strong><br>ไม่ใช่ข้อมูลเสีย แต่ตัวถอดรหัส HEIC ใน browser ไม่รองรับไฟล์นี้<br><br><strong>วิธีที่เสถียร:</strong> เปิดรูปใน Photos → Share/Save/Export เป็น JPEG หรือใช้ Screenshot แล้วอัปโหลด JPG/PNG จากนั้นกด “อ่านข้อมูล” อีกครั้ง</div>`;
+      $("#ocrStatus").textContent="HEIC decoder ไม่รองรับไฟล์นี้ — ใช้ JPG/PNG สำหรับ OCR";
+    }else{
+      $("#ocrStatus").textContent="อ่านไฟล์ไม่สำเร็จ: "+e.message;
+    }
+    setOcrProgress(0,"เปิดไฟล์ไม่สำเร็จ");
   }
 }
 async function smartReadImage(blob){
@@ -558,3 +568,172 @@ $("#saveDetectedBtn").onclick=()=>{
 
 
 console.info("Personal Healthcare v8.1.1 Smart Import hotfix loaded");
+
+console.info("Personal Healthcare v8.1.2 Image Import Fix loaded");
+
+
+/* ================= v8.2 AI Health Report ================= */
+const AI_CFG="ph_v82_ai_cfg";
+let aiPhotos=[], aiResult=null;
+
+function getAiCfg(){try{return JSON.parse(localStorage.getItem(AI_CFG)||"{}")}catch{return {}}}
+function deriveAiFunctionUrl(supabaseUrl){
+  const u=String(supabaseUrl||"").replace(/\/$/,"");
+  return u?`${u}/functions/v1/analyze-health-report`:"";
+}
+function saveAiCfg(){
+  localStorage.setItem(AI_CFG,JSON.stringify({
+    functionUrl:$("#aiFunctionUrl").value.trim(),
+    anonKey:$("#aiAnonKey").value.trim()
+  }));
+}
+if($("#saveAiConfig"))$("#saveAiConfig").onclick=()=>{
+  saveAiCfg();$("#aiConfigStatus").textContent="บันทึก AI Config แล้ว";
+};
+if($("#testAiFunction"))$("#testAiFunction").onclick=async()=>{
+  saveAiCfg(); const c=getAiCfg(); $("#aiConfigStatus").textContent="กำลังทดสอบ...";
+  if(!c.functionUrl||!c.anonKey){$("#aiConfigStatus").textContent="กรุณาใส่ Function URL และ Anon Key";return}
+  try{
+    const r=await fetch(c.functionUrl,{method:"OPTIONS",headers:{apikey:c.anonKey,Authorization:`Bearer ${c.anonKey}`}});
+    $("#aiConfigStatus").textContent=r.ok||r.status===204?"Function ตอบสนองแล้ว":"Function ตอบกลับ "+r.status;
+  }catch(e){$("#aiConfigStatus").textContent="เชื่อมต่อไม่ได้: "+e.message}
+};
+
+function setAiProgress(p,text){
+  $("#aiProgressWrap").hidden=false;
+  $("#aiProgressBar").style.width=Math.max(0,Math.min(100,p))+"%";
+  $("#aiProgressText").textContent=text||"";
+}
+async function fileToJpegDataUrl(file,maxSide=1800,quality=.86){
+  // iOS Safari can often decode camera HEIC natively even when libheif JS cannot.
+  const url=URL.createObjectURL(file);
+  try{
+    const img=new Image();
+    img.decoding="async";
+    await new Promise((res,rej)=>{img.onload=res;img.onerror=()=>rej(new Error("อุปกรณ์ไม่สามารถเปิดรูปนี้ได้"));img.src=url});
+    const scale=Math.min(1,maxSide/Math.max(img.naturalWidth,img.naturalHeight));
+    const w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale));
+    const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
+    const ctx=canvas.getContext("2d",{alpha:false});ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
+    return canvas.toDataURL("image/jpeg",quality);
+  }finally{URL.revokeObjectURL(url)}
+}
+async function addAiFiles(files){
+  for(const f of files){
+    if(!String(f.type).startsWith("image/") && !/\.(heic|heif|jpe?g|png|webp)$/i.test(f.name))continue;
+    try{
+      const dataUrl=await fileToJpegDataUrl(f);
+      aiPhotos.push({id:uid(),name:f.name,dataUrl,originalSize:f.size});
+    }catch(e){
+      alert(`${f.name}: ${e.message}\nถ้าเป็น HEIC ให้เปิดรูปแล้ว Screenshot จากนั้นเลือกรูป Screenshot แทน`);
+    }
+  }
+  renderAiPhotos();
+}
+function renderAiPhotos(){
+  const box=$("#aiPhotoGrid");
+  box.innerHTML=aiPhotos.map((p,i)=>`<div class="ai-photo"><img src="${p.dataUrl}" alt=""><button type="button" data-i="${i}">×</button></div>`).join("");
+  $$("button",box).forEach(b=>b.onclick=()=>{aiPhotos.splice(Number(b.dataset.i),1);renderAiPhotos()});
+  $("#analyzeAiBtn").disabled=!aiPhotos.length;
+}
+if($("#cameraInput"))$("#cameraInput").onchange=e=>{addAiFiles([...e.target.files]);e.target.value=""};
+if($("#galleryInput"))$("#galleryInput").onchange=e=>{addAiFiles([...e.target.files]);e.target.value=""};
+if($("#clearAiPhotosBtn"))$("#clearAiPhotosBtn").onclick=()=>{aiPhotos=[];aiResult=null;renderAiPhotos();resetAiAnalysis()};
+
+function resetAiAnalysis(){
+  $("#aiEmptyState").hidden=false;$("#aiAnalysis").hidden=true;$("#aiReviewPanel").hidden=true;$("#aiProgressWrap").hidden=true;
+}
+function aiFlagLabel(f){return ({normal:"ปกติ/ในช่วง",high:"สูง",low:"ต่ำ",abnormal:"ผิดช่วง",unknown:"ไม่ทราบ"})[f]||f||"ไม่ทราบ"}
+function overallLabel(s){return ({normal:"ไม่มีจุดเด่นจากข้อมูลที่อ่านได้",follow_up:"ควรติดตาม",urgent:"ควรประเมินเร่งด่วน",unknown:"ต้องตรวจสอบ"})[s]||"ต้องตรวจสอบ"}
+function confidenceClass(c){const n=Number(c);return n>=.85?"high":n>=.65?"medium":"low"}
+
+async function analyzeAiPhotos(){
+  const cfg=getAiCfg(), base=getCfg();
+  const url=cfg.functionUrl||deriveAiFunctionUrl(base.url), key=cfg.anonKey||base.key;
+  if(!url||!key){
+    go("settings");
+    $("#aiConfigStatus").textContent="ต้องตั้งค่า Edge Function URL และ Supabase Anon Key ก่อนใช้ AI";
+    return;
+  }
+  if(!aiPhotos.length)return;
+  $("#analyzeAiBtn").disabled=true;setAiProgress(12,"กำลังเตรียมภาพสำหรับ AI...");
+  try{
+    const payload={images:aiPhotos.map((p,i)=>({name:p.name||`page-${i+1}.jpg`,data_url:p.dataUrl})),language:"th"};
+    setAiProgress(28,`กำลังส่ง ${aiPhotos.length} รูปไปวิเคราะห์...`);
+    const res=await fetch(url,{
+      method:"POST",
+      headers:{"Content-Type":"application/json",apikey:key,Authorization:`Bearer ${key}`},
+      body:JSON.stringify(payload)
+    });
+    const raw=await res.text();
+    if(!res.ok)throw new Error(`${res.status}: ${raw.slice(0,300)}`);
+    let data;try{data=JSON.parse(raw)}catch{throw new Error("Function ส่งข้อมูลกลับมาไม่ใช่ JSON")}
+    if(data.error)throw new Error(data.error);
+    aiResult=data;
+    setAiProgress(92,"กำลังสร้าง Review...");
+    renderAiResult();
+    setAiProgress(100,"วิเคราะห์เสร็จแล้ว — กรุณาตรวจเทียบต้นฉบับก่อน Save");
+  }catch(e){
+    $("#aiProgressText").textContent="วิเคราะห์ไม่สำเร็จ: "+e.message;
+    alert("AI วิเคราะห์ไม่สำเร็จ\n"+e.message);
+  }finally{$("#analyzeAiBtn").disabled=!aiPhotos.length}
+}
+if($("#analyzeAiBtn"))$("#analyzeAiBtn").onclick=analyzeAiPhotos;
+
+function renderAiResult(){
+  const r=aiResult||{};
+  $("#aiEmptyState").hidden=true;$("#aiAnalysis").hidden=false;$("#aiReviewPanel").hidden=false;
+  $("#aiSummaryTitle").textContent=r.report_title||"ผลตรวจสุขภาพ";
+  $("#aiSummaryText").textContent=r.summary_th||"AI อ่านข้อมูลจากเอกสารแล้ว กรุณาตรวจรายการด้านล่าง";
+  const overall=r.overall_status||"unknown",badge=$("#aiOverallBadge");
+  badge.className=`status-badge ${overall}`;badge.textContent=overallLabel(overall);
+
+  const alerts=Array.isArray(r.alerts)?r.alerts:[];
+  $("#aiAlerts").innerHTML=alerts.length?alerts.map(a=>`<div class="ai-alert ${esc(a.level||"info")}"><strong>${esc(a.title||"สิ่งที่ควรติดตาม")}</strong><small>${esc(a.message_th||"")}</small></div>`).join(""):`<div class="item"><small>ไม่พบคำเตือนเด่นจากข้อมูลที่ AI อ่านได้</small></div>`;
+
+  const rows=Array.isArray(r.results)?r.results:[];
+  $("#aiResultsBody").innerHTML=rows.length?rows.map((x,i)=>`<tr data-i="${i}">
+    <td><input type="checkbox" class="air-use" ${x.confidence>=.55?"checked":""}></td>
+    <td><input class="air-name ai-name" value="${esc(x.name||"")}"></td>
+    <td><input class="air-value" value="${esc(x.value_text??x.value??"")}"></td>
+    <td><input class="air-unit" value="${esc(x.unit||"")}"></td>
+    <td><input class="air-ref ai-ref" value="${esc(x.reference_range||"")}"></td>
+    <td><select class="air-flag">${["normal","high","low","abnormal","unknown"].map(f=>`<option value="${f}" ${x.flag===f?"selected":""}>${aiFlagLabel(f)}</option>`).join("")}</select></td>
+    <td><span class="confidence ${confidenceClass(x.confidence)}">${Math.round((Number(x.confidence)||0)*100)}%</span></td>
+    <td><input class="air-note ai-note" value="${esc(x.note_th||"")}"></td>
+  </tr>`).join(""):`<tr><td colspan="8">AI ไม่พบค่าที่เป็นโครงสร้างจากภาพนี้</td></tr>`;
+  $("#aiSaveStatus").textContent=`พบ ${rows.length} รายการ • วันที่เอกสาร: ${r.document_date||"ไม่ทราบ"}`;
+}
+if($("#selectAllAiBtn"))$("#selectAllAiBtn").onclick=()=>$$(".air-use").forEach(x=>x.checked=true);
+if($("#deselectAllAiBtn"))$("#deselectAllAiBtn").onclick=()=>$$(".air-use").forEach(x=>x.checked=false);
+
+function mapAiToRecord(name,valueText,unit,note,date){
+  const n=String(name||"").toLowerCase();
+  let type="lab", value=numOrText(String(valueText).replace(/,/g,"").match(/-?\d+(?:\.\d+)?/)?.[0]||valueText), value2=null;
+  if(/weight|น้ำหนัก/.test(n))type="weight";
+  else if(/pulse|heart rate|ชีพจร/.test(n))type="pulse";
+  else if(/glucose|blood sugar|น้ำตาล/.test(n))type="glucose";
+  else if(/blood pressure|ความดัน/.test(n)){
+    type="blood_pressure";const m=String(valueText).match(/(\d{2,3})\s*\/\s*(\d{2,3})/);if(m){value=+m[1];value2=+m[2]}
+  }
+  return {id:uid(),date:date||new Date().toISOString(),type,value,value2,unit:unit||guessUnit(type),note,source:"AI Health Report v8.2",created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+}
+if($("#saveAiResultsBtn"))$("#saveAiResultsBtn").onclick=()=>{
+  if(!aiResult)return;
+  const trs=$$("#aiResultsBody tr[data-i]"),existing=new Set(db.records.map(signature));let saved=0,skipped=0;
+  let docDate=aiResult.document_date?new Date(aiResult.document_date+"T08:00:00"):new Date();
+  if(isNaN(docDate))docDate=new Date();
+  for(const tr of trs){
+    if(!$(".air-use",tr).checked)continue;
+    const i=Number(tr.dataset.i),orig=aiResult.results[i]||{};
+    const name=$(".air-name",tr).value.trim(),value=$(".air-value",tr).value.trim(),unit=$(".air-unit",tr).value.trim(),ref=$(".air-ref",tr).value.trim(),flag=$(".air-flag",tr).value,note=$(".air-note",tr).value.trim();
+    const fullNote=`${name}${ref?` • Reference: ${ref}`:""} • AI flag: ${flag}${note?` • ${note}`:""} • AI extracted; verify with original report`;
+    const rec=mapAiToRecord(name,value,unit,fullNote,docDate.toISOString());
+    if(validateRec(rec).length||existing.has(signature(rec))){skipped++;continue}
+    db.records.push(rec);existing.add(signature(rec));saved++;
+  }
+  save();
+  $("#aiSaveStatus").textContent=`บันทึกแล้ว ${saved} รายการ${skipped?` • ข้าม ${skipped} รายการ`:""} — เปิด Dashboard เพื่อดูแนวโน้ม`;
+  setTimeout(()=>go("dashboard"),700);
+};
+console.info("Personal Healthcare v8.2 AI Health Report loaded");
