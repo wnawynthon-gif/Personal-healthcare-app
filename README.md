@@ -1,4 +1,4 @@
-# Personal Healthcare v8.1 — Smart Import
+# Personal Healthcare v8.1.1 — Smart Import Hotfix
 
 เวอร์ชันนี้สร้างใหม่ให้ Import เสถียรกว่าเดิม โดยไม่ผูกการ Save กับการตรวจไฟล์ทั้งก้อน
 
@@ -74,3 +74,7 @@
 - ไฟล์ที่อัปโหลดใน v8.0 ต้องอัปโหลดใหม่ 1 ครั้ง เพราะ v8.0 ไม่เคยเก็บ binary file ไว้
 
 หมายเหตุ: OCR เป็นการช่วยอ่านข้อมูล ไม่ควรใช้แทนการตรวจค่าต้นฉบับ ผู้ใช้ต้องตรวจตัวเลขก่อน Save
+
+## v8.1.1 hotfix
+- Fixed duplicate `renderFiles()` definition that caused the legacy Document Inbox renderer to override Smart Import UI.
+- Re-uploading the same file now restores its binary into IndexedDB instead of creating another duplicate card.

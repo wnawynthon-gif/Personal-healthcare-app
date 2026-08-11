@@ -258,6 +258,11 @@ async function handleFiles(files){
   const docs=files.filter(f=>!dataFiles.includes(f));
   for(const f of docs){
     const id=uid();
+    const dup=db.documents.find(d=>d.name===f.name && d.size===f.size);
+    if(dup){
+      try{await idbPutFile(dup.id,f);dup.hasBlob=true;dup.type=f.type||guessMimeFromName(f.name);dup.date=new Date().toISOString();dup.note="Ready for Smart Import (file restored)"}catch(err){console.warn(err)}
+      continue;
+    }
     db.documents.push({id,name:f.name,type:f.type||guessMimeFromName(f.name),size:f.size,date:new Date().toISOString(),note:"Ready for Smart Import",hasBlob:true});
     try{await idbPutFile(id,f)}catch(err){console.warn("IndexedDB file save failed",err);db.documents.at(-1).hasBlob=false;db.documents.at(-1).note="Metadata only — browser file storage failed"}
   }
@@ -551,3 +556,5 @@ $("#saveDetectedBtn").onclick=()=>{
   setTimeout(()=>{$("#ocrDialog").close();go("dashboard")},650);
 };
 
+
+console.info("Personal Healthcare v8.1.1 Smart Import hotfix loaded");
