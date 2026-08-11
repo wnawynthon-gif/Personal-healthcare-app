@@ -1,4 +1,4 @@
-# Personal Healthcare v8.0
+# Personal Healthcare v8.1 — Smart Import
 
 เวอร์ชันนี้สร้างใหม่ให้ Import เสถียรกว่าเดิม โดยไม่ผูกการ Save กับการตรวจไฟล์ทั้งก้อน
 
@@ -56,3 +56,21 @@
 - Storage upload binary ไป Supabase Storage
 
 ไฟล์เหล่านี้วางโครงไว้ให้เพิ่มใน v8.1 ได้โดยไม่ต้องรื้อ Import Center
+
+
+## v8.0.1 GitHub Pages fix
+- Added `.nojekyll` to bypass Jekyll processing.
+- Added `404.html` fallback.
+- Removed Vercel-only configuration from the GitHub Pages package.
+
+## v8.1 Smart Import
+- เก็บไฟล์จริงใน IndexedDB ของ browser (ไม่ใช่ metadata อย่างเดียว)
+- HEIC/HEIF → JPEG preview ใน browser ด้วย heic2any
+- JPG/PNG/HEIC OCR ด้วย Tesseract.js
+- PDF: ดึง text ด้วย PDF.js; ถ้าหน้ามี text น้อยจะ fallback OCR
+- Auto-detect: BP, Weight, Pulse, Glucose และ lab พื้นฐาน
+- Review table ก่อน Save ทุกครั้ง
+- Duplicate check ก่อนเข้า Dashboard
+- ไฟล์ที่อัปโหลดใน v8.0 ต้องอัปโหลดใหม่ 1 ครั้ง เพราะ v8.0 ไม่เคยเก็บ binary file ไว้
+
+หมายเหตุ: OCR เป็นการช่วยอ่านข้อมูล ไม่ควรใช้แทนการตรวจค่าต้นฉบับ ผู้ใช้ต้องตรวจตัวเลขก่อน Save

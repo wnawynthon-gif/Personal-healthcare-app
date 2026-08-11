@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v8.1</title>
+  <title>Personal Healthcare v8.0</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -13,7 +13,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v8.1 • Smart Health Import</small></div>
+      <div><strong>Personal Healthcare</strong><small>v8.0 • Health Command Center</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
@@ -43,7 +43,7 @@
 
     <section class="view active" id="view-dashboard">
       <div class="notice info">
-        <strong>v8.1:</strong> Smart Import: HEIC/JPG/PNG/PDF → Preview → OCR → ตรวจค่า → Save เข้า Dashboard พร้อมเก็บไฟล์จริงในเครื่อง.
+        <strong>v8.0:</strong> Import Center ใหม่, แก้ไขข้อมูลก่อน Save, autosave local, duplicate check, dashboard และ health flags.
       </div>
 
       <div class="kpis">
@@ -180,16 +180,7 @@
 
     <section class="view" id="view-files">
       <div class="panel">
-        <div class="panel-head split">
-          <div>
-            <h3>Smart Document Inbox</h3>
-            <small>HEIC / JPG / PNG / PDF • เปิดดูไฟล์จริงและอ่านข้อมูลด้วย OCR</small>
-          </div>
-          <button class="btn primary" data-go="import">+ เพิ่มเอกสาร</button>
-        </div>
-        <div class="notice info">
-          กด <strong>อ่านข้อมูล</strong> ที่เอกสารแต่ละใบ ระบบจะพยายามดึงข้อความและค่าที่เกี่ยวกับสุขภาพ จากนั้นให้ตรวจแก้ก่อน Save
-        </div>
+        <div class="panel-head split"><div><h3>Document Inbox</h3><small>PDF / รูปผลตรวจ / เอกสารสุขภาพ</small></div><button class="btn primary" data-go="import">+ เพิ่มเอกสาร</button></div>
         <div id="fileList" class="file-grid"></div>
       </div>
     </section>
@@ -254,54 +245,6 @@
   </form>
 </dialog>
 
-
-<dialog id="ocrDialog" class="wide-dialog">
-  <form method="dialog" id="ocrForm">
-    <div class="dialog-head">
-      <div><h3>Smart Import — ตรวจข้อมูลจากเอกสาร</h3><small id="ocrFileName" class="muted"></small></div>
-      <button value="cancel" class="icon-btn">×</button>
-    </div>
-
-    <div class="ocr-layout">
-      <div>
-        <div id="ocrPreview" class="ocr-preview"><span class="muted">กำลังเตรียม Preview…</span></div>
-        <div class="ocr-progress-wrap">
-          <div class="ocr-progress"><span id="ocrProgressBar"></span></div>
-          <small id="ocrProgressText" class="muted">พร้อมอ่านข้อมูล</small>
-        </div>
-      </div>
-
-      <div>
-        <div class="panel-lite">
-          <div class="panel-head split">
-            <div><strong>ข้อความที่อ่านได้</strong><small class="muted">สามารถแก้ข้อความก่อนวิเคราะห์ซ้ำ</small></div>
-            <button type="button" class="btn mini" id="reanalyzeTextBtn">วิเคราะห์ข้อความใหม่</button>
-          </div>
-          <textarea class="input mono" id="ocrText" rows="10" placeholder="OCR text จะปรากฏที่นี่"></textarea>
-        </div>
-
-        <div class="panel-lite" style="margin-top:10px">
-          <div class="panel-head split">
-            <div><strong>ค่าที่ระบบพบ</strong><small class="muted">เลือกเฉพาะรายการที่ต้องการ Save</small></div>
-            <button type="button" class="btn mini" id="addDetectedRowBtn">+ เพิ่มแถว</button>
-          </div>
-          <div class="table-wrap">
-            <table class="detect-table">
-              <thead><tr><th>ใช้</th><th>ประเภท</th><th>วันที่</th><th>ค่า 1</th><th>ค่า 2</th><th>หน่วย</th><th>หมายเหตุ</th><th></th></tr></thead>
-              <tbody id="detectedBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="footer-actions">
-      <span id="ocrStatus" class="muted"></span>
-      <button value="cancel" class="btn ghost">ยกเลิก</button>
-      <button type="button" class="btn primary" id="saveDetectedBtn">Save ที่เลือกเข้า Dashboard</button>
-    </div>
-  </form>
-</dialog>
-
 <dialog id="pasteDialog">
   <form method="dialog" id="pasteForm">
     <div class="dialog-head"><h3>วางข้อมูล CSV</h3><button value="cancel" class="icon-btn">×</button></div>
@@ -310,8 +253,6 @@
   </form>
 </dialog>
 
-<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/tesseract.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

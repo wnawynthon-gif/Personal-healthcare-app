@@ -1,6 +1,6 @@
 
 const $=(s,root=document)=>root.querySelector(s); const $$=(s,root=document)=>[...root.querySelectorAll(s)];
-const KEY="ph_v8_data", CFG="ph_v8_cfg";
+const KEY="ph_v8_data", CFG="ph_v8_cfg"; const FILE_DB="ph_v81_files", FILE_STORE="documents";
 const blank={records:[],medications:[],documents:[]};
 let db=load(), importState={raw:[],headers:[],valid:[],invalid:[],duplicates:[]};
 
@@ -256,7 +256,11 @@ $("#dropzone").addEventListener("drop",e=>handleFiles([...e.dataTransfer.files])
 async function handleFiles(files){
   const dataFiles=files.filter(f=>/\.(csv|json)$/i.test(f.name)||["text/csv","application/json"].includes(f.type));
   const docs=files.filter(f=>!dataFiles.includes(f));
-  docs.forEach(f=>db.documents.push({id:uid(),name:f.name,type:f.type||"file",size:f.size,date:new Date().toISOString(),note:"Imported to Document Inbox"}));
+  for(const f of docs){
+    const id=uid();
+    db.documents.push({id,name:f.name,type:f.type||guessMimeFromName(f.name),size:f.size,date:new Date().toISOString(),note:"Ready for Smart Import",hasBlob:true});
+    try{await idbPutFile(id,f)}catch(err){console.warn("IndexedDB file save failed",err);db.documents.at(-1).hasBlob=false;db.documents.at(-1).note="Metadata only — browser file storage failed"}
+  }
   if(docs.length)save();
   if(dataFiles.length){
     const f=dataFiles[0],text=await f.text();
@@ -277,9 +281,38 @@ function renderMeds(){
 $("#addMedBtn").onclick=()=>{$("#medForm").reset();$("#medDialog").showModal()};
 $("#medForm").onsubmit=e=>{e.preventDefault();db.medications.push({id:uid(),name:$("#medName").value.trim(),dose:$("#medDose").value.trim(),time:$("#medTime").value,note:$("#medNote").value.trim(),created_at:new Date().toISOString()});save();$("#medDialog").close()}
 
-function renderFiles(){
-  $("#fileList").innerHTML=db.documents.length?db.documents.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(f=>`<div class="file-card"><div class="file-type">${f.type.includes("pdf")?"PDF":"IMG"}</div><strong>${esc(f.name)}</strong><small>${Math.round(f.size/1024)} KB • ${fmtDate(f.date)}</small><p class="muted">${esc(f.note||"")}</p><button class="btn mini del-file" data-id="${f.id}">ลบรายการ</button></div>`).join(""):`<div class="item"><small>ยังไม่มีเอกสาร</small></div>`;
-  $$(".del-file").forEach(b=>b.onclick=()=>{db.documents=db.documents.filter(f=>f.id!==b.dataset.id);save()});
+async function renderFiles(){
+  const box=$("#fileList");
+  if(!db.documents.length){box.innerHTML=`<div class="item"><small>ยังไม่มีเอกสาร</small></div>`;return}
+  const docs=[...db.documents].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  box.innerHTML=docs.map(f=>`<div class="file-card" data-doc="${f.id}">
+    <span class="smart-badge">Smart Import</span>
+    <div class="file-thumb" id="thumb-${f.id}"><span class="muted">${isPdfDoc(f)?"PDF":isHeicDoc(f)?"HEIC":"IMG"}</span></div>
+    <strong>${esc(f.name)}</strong>
+    <small>${Math.round(f.size/1024)} KB • ${fmtDate(f.date)}</small>
+    <p class="muted">${esc(f.note||"")}</p>
+    <div class="file-actions">
+      <button class="btn mini preview-file" data-id="${f.id}">เปิดดู</button>
+      <button class="btn mini primary smart-read" data-id="${f.id}">อ่านข้อมูล</button>
+      <button class="btn mini del-file" data-id="${f.id}">ลบ</button>
+    </div>
+  </div>`).join("");
+  $$(".del-file").forEach(b=>b.onclick=async()=>{if(confirm("ลบเอกสารนี้?")){await idbDeleteFile(b.dataset.id);db.documents=db.documents.filter(f=>f.id!==b.dataset.id);save()}});
+  $$(".preview-file").forEach(b=>b.onclick=()=>openSmartDoc(b.dataset.id,false));
+  $$(".smart-read").forEach(b=>b.onclick=()=>openSmartDoc(b.dataset.id,true));
+  // Load lightweight thumbnails lazily.
+  for(const f of docs.slice(0,12)){
+    try{
+      const blob=await idbGetFile(f.id); if(!blob) continue;
+      const thumb=$("#thumb-"+CSS.escape(f.id));
+      if(!thumb)continue;
+      if(!isPdfDoc(f)){
+        const jpeg=await ensureBrowserImage(blob,f);
+        const url=URL.createObjectURL(jpeg);
+        thumb.innerHTML=`<img src="${url}" alt="">`;
+      }
+    }catch(e){console.warn("thumb",f.name,e)}
+  }
 }
 
 function exportData(){downloadText(`personal-healthcare-v8-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({version:"8.0",exported_at:new Date().toISOString(),...db},null,2),"application/json")}
@@ -305,3 +338,216 @@ function loadSettings(){const c=getCfg();$("#supabaseUrl").value=c.url||"";$("#s
 
 function renderAll(){renderDashboard();renderRecords();renderMeds();renderFiles();loadSettings()}
 renderAll();syncBadge();setImportStep(1);
+
+
+/* ---------------- v8.1 Smart Document Import ---------------- */
+let currentOcrDoc=null, detectedRows=[];
+
+function guessMimeFromName(name){
+  const n=String(name||"").toLowerCase();
+  if(n.endsWith(".heic")||n.endsWith(".heif"))return "image/heic";
+  if(n.endsWith(".pdf"))return "application/pdf";
+  if(n.endsWith(".png"))return "image/png";
+  if(n.endsWith(".jpg")||n.endsWith(".jpeg"))return "image/jpeg";
+  return "application/octet-stream";
+}
+function isHeicDoc(f){const s=(f.type+" "+f.name).toLowerCase();return s.includes("heic")||s.includes("heif")}
+function isPdfDoc(f){const s=(f.type+" "+f.name).toLowerCase();return s.includes("pdf")}
+function openFileDb(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open(FILE_DB,1);
+    req.onupgradeneeded=()=>{const d=req.result;if(!d.objectStoreNames.contains(FILE_STORE))d.createObjectStore(FILE_STORE)};
+    req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+  });
+}
+async function idbPutFile(id,file){const d=await openFileDb();return new Promise((res,rej)=>{const tx=d.transaction(FILE_STORE,"readwrite");tx.objectStore(FILE_STORE).put(file,id);tx.oncomplete=()=>res(true);tx.onerror=()=>rej(tx.error)})}
+async function idbGetFile(id){const d=await openFileDb();return new Promise((res,rej)=>{const q=d.transaction(FILE_STORE).objectStore(FILE_STORE).get(id);q.onsuccess=()=>res(q.result||null);q.onerror=()=>rej(q.error)})}
+async function idbDeleteFile(id){const d=await openFileDb();return new Promise((res,rej)=>{const tx=d.transaction(FILE_STORE,"readwrite");tx.objectStore(FILE_STORE).delete(id);tx.oncomplete=()=>res(true);tx.onerror=()=>rej(tx.error)})}
+
+async function ensureBrowserImage(blob,doc){
+  if(isHeicDoc(doc)||String(blob.type).includes("heic")||String(blob.type).includes("heif")){
+    if(typeof heic2any!=="function")throw new Error("โหลด HEIC converter ไม่สำเร็จ");
+    let out=await heic2any({blob,toType:"image/jpeg",quality:.9});
+    if(Array.isArray(out))out=out[0];
+    return out;
+  }
+  return blob;
+}
+function setOcrProgress(p,text){
+  $("#ocrProgressBar").style.width=Math.max(0,Math.min(100,p))+"%";
+  $("#ocrProgressText").textContent=text||"";
+}
+async function openSmartDoc(id,runOcr=true){
+  const doc=db.documents.find(x=>x.id===id); if(!doc)return;
+  currentOcrDoc=doc;detectedRows=[];
+  $("#ocrFileName").textContent=doc.name;$("#ocrText").value="";$("#detectedBody").innerHTML="";
+  $("#ocrStatus").textContent="";setOcrProgress(0,"กำลังเปิดไฟล์…");
+  $("#ocrDialog").showModal();
+
+  const blob=await idbGetFile(id);
+  if(!blob){
+    $("#ocrPreview").innerHTML=`<div class="notice warn">ไฟล์นี้มาจาก v8.0 ซึ่งเก็บไว้เพียง metadata กรุณาอัปโหลดไฟล์นี้อีกครั้งใน v8.1 เพื่อให้ระบบอ่านไฟล์จริง</div>`;
+    $("#ocrStatus").textContent="ต้องอัปโหลดไฟล์นี้ใหม่ 1 ครั้ง";
+    return;
+  }
+  try{
+    if(isPdfDoc(doc)){
+      await previewPdf(blob);
+      if(runOcr)await smartReadPdf(blob);
+    }else{
+      const imgBlob=await ensureBrowserImage(blob,doc);
+      const url=URL.createObjectURL(imgBlob);
+      $("#ocrPreview").innerHTML=`<img id="ocrImagePreview" src="${url}" alt="${esc(doc.name)}">`;
+      setOcrProgress(8,"Preview พร้อม");
+      if(runOcr)await smartReadImage(imgBlob);
+    }
+  }catch(e){
+    $("#ocrStatus").textContent="อ่านไฟล์ไม่สำเร็จ: "+e.message;
+    setOcrProgress(0,"เกิดข้อผิดพลาด");
+  }
+}
+async function smartReadImage(blob){
+  if(!window.Tesseract)throw new Error("OCR library ยังโหลดไม่สำเร็จ ลอง Refresh แล้วกดอีกครั้ง");
+  setOcrProgress(12,"เริ่ม OCR…");
+  const result=await Tesseract.recognize(blob,"eng",{
+    logger:m=>{
+      if(m.status==="recognizing text")setOcrProgress(15+Math.round((m.progress||0)*75),`OCR ${Math.round((m.progress||0)*100)}%`);
+      else setOcrProgress(12,m.status||"กำลังประมวลผล");
+    }
+  });
+  const text=result?.data?.text||"";
+  $("#ocrText").value=text;
+  setOcrProgress(92,"กำลังวิเคราะห์ค่าจากข้อความ…");
+  detectedRows=parseHealthText(text,currentOcrDoc);
+  renderDetectedRows();
+  setOcrProgress(100,`อ่านเสร็จ • พบ ${detectedRows.length} รายการ`);
+}
+async function loadPdfJs(){
+  const pdfjs=await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.mjs");
+  pdfjs.GlobalWorkerOptions.workerSrc="https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.worker.mjs";
+  return pdfjs;
+}
+async function getPdf(blob){
+  const pdfjs=await loadPdfJs();
+  return pdfjs.getDocument({data:await blob.arrayBuffer()}).promise;
+}
+async function previewPdf(blob){
+  const pdf=await getPdf(blob),page=await pdf.getPage(1),vp=page.getViewport({scale:1.25});
+  const canvas=document.createElement("canvas"),ctx=canvas.getContext("2d");canvas.width=vp.width;canvas.height=vp.height;
+  await page.render({canvasContext:ctx,viewport:vp}).promise;
+  $("#ocrPreview").innerHTML="";$("#ocrPreview").appendChild(canvas);
+  setOcrProgress(8,`PDF ${pdf.numPages} หน้า • Preview หน้า 1`);
+}
+async function smartReadPdf(blob){
+  const pdf=await getPdf(blob),texts=[],maxPages=Math.min(pdf.numPages,8);
+  for(let i=1;i<=maxPages;i++){
+    setOcrProgress(10+Math.round((i-1)/maxPages*75),`อ่าน PDF หน้า ${i}/${maxPages}`);
+    const page=await pdf.getPage(i),content=await page.getTextContent();
+    let t=content.items.map(x=>x.str).join(" ").trim();
+    if(t.length<80 && window.Tesseract){
+      const vp=page.getViewport({scale:1.6}),canvas=document.createElement("canvas"),ctx=canvas.getContext("2d");canvas.width=vp.width;canvas.height=vp.height;
+      await page.render({canvasContext:ctx,viewport:vp}).promise;
+      const o=await Tesseract.recognize(canvas,"eng");
+      t=o?.data?.text||t;
+    }
+    texts.push(`--- Page ${i} ---\n${t}`);
+  }
+  const text=texts.join("\n\n");$("#ocrText").value=text;
+  detectedRows=parseHealthText(text,currentOcrDoc);renderDetectedRows();setOcrProgress(100,`อ่าน PDF เสร็จ • พบ ${detectedRows.length} รายการ`);
+}
+function parseAnyDate(text){
+  const s=String(text||"");
+  const iso=s.match(/\b(20\d{2})[-\/](\d{1,2})[-\/](\d{1,2})\b/);
+  if(iso){const d=new Date(`${iso[1]}-${iso[2].padStart(2,"0")}-${iso[3].padStart(2,"0")}T08:00:00`);if(!isNaN(d))return d.toISOString()}
+  const uk=s.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](20\d{2})\b/);
+  if(uk){const d=new Date(`${uk[3]}-${uk[2].padStart(2,"0")}-${uk[1].padStart(2,"0")}T08:00:00`);if(!isNaN(d))return d.toISOString()}
+  return new Date().toISOString();
+}
+function mkDetected(type,value,value2,unit,note,date){
+  return {selected:true,type,value:value??"",value2:value2??"",unit:unit||guessUnit(type),note:note||"",date:date||new Date().toISOString()};
+}
+function parseHealthText(text,doc){
+  const raw=String(text||""),norm=raw.replace(/[|]/g," ").replace(/\s+/g," ");
+  const date=parseAnyDate(norm),rows=[],seen=new Set();
+  const add=r=>{const sig=[r.type,r.value,r.value2,r.unit].join("|");if(!seen.has(sig)){seen.add(sig);rows.push(r)}};
+
+  // Blood pressure: labels or 3-number monitor layouts (SBP/DBP/Pulse)
+  let m;
+  const bpPatterns=[
+    /(?:blood\s*pressure|bp|systolic|sys)[^\d]{0,20}(\d{2,3})\D{1,12}(?:diastolic|dia)?[^\d]{0,10}(\d{2,3})/ig,
+    /\b(\d{2,3})\s*\/\s*(\d{2,3})\s*(?:mmhg)?\b/ig
+  ];
+  for(const rx of bpPatterns)while((m=rx.exec(norm))){
+    const s=+m[1],d=+m[2];if(s>=70&&s<=260&&d>=35&&d<=160&&s>d)add(mkDetected("blood_pressure",s,d,"mmHg","อ่านจาก "+(doc?.name||"เอกสาร"),date));
+  }
+  // Weight
+  const wrx=/(?:weight|น้ำหนัก)[^\d]{0,20}(\d{2,3}(?:\.\d+)?)\s*(kg|kgs|kilograms?)?/ig;
+  while((m=wrx.exec(norm))){const v=+m[1];if(v>=25&&v<=300)add(mkDetected("weight",v,null,"kg","อ่านจาก "+(doc?.name||"เอกสาร"),date))}
+  // Pulse / heart rate
+  const prx=/(?:pulse|heart\s*rate|hr|ชีพจร)[^\d]{0,20}(\d{2,3})\s*(?:bpm)?/ig;
+  while((m=prx.exec(norm))){const v=+m[1];if(v>=30&&v<=220)add(mkDetected("pulse",v,null,"bpm","อ่านจาก "+(doc?.name||"เอกสาร"),date))}
+  // Glucose
+  const grx=/(?:glucose|blood\s*sugar|น้ำตาล)[^\d]{0,25}(\d{2,3}(?:\.\d+)?)\s*(mg\/dl|mmol\/l)?/ig;
+  while((m=grx.exec(norm))){let unit=(m[2]||"mg/dL");add(mkDetected("glucose",+m[1],null,unit,"อ่านจาก "+(doc?.name||"เอกสาร"),date))}
+  // Common labs
+  const labs=[
+    ["HbA1c",/(?:hba1c)[^\d]{0,18}(\d{1,2}(?:\.\d+)?)\s*(%|mmol\/mol)?/i],
+    ["Total cholesterol",/(?:total\s*cholesterol|cholesterol)[^\d]{0,22}(\d{1,3}(?:\.\d+)?)\s*(mg\/dl|mmol\/l)?/i],
+    ["LDL",/\bldl\b[^\d]{0,18}(\d{1,3}(?:\.\d+)?)\s*(mg\/dl|mmol\/l)?/i],
+    ["HDL",/\bhdl\b[^\d]{0,18}(\d{1,3}(?:\.\d+)?)\s*(mg\/dl|mmol\/l)?/i],
+    ["Triglycerides",/(?:triglycerides?|tg)\b[^\d]{0,18}(\d{1,4}(?:\.\d+)?)\s*(mg\/dl|mmol\/l)?/i],
+    ["Creatinine",/\bcreatinine\b[^\d]{0,18}(\d{1,4}(?:\.\d+)?)\s*(mg\/dl|umol\/l|µmol\/l)?/i],
+  ];
+  for(const [label,rx] of labs){const x=norm.match(rx);if(x)add(mkDetected("lab",+x[1],null,x[2]||"",label+" • อ่านจาก "+(doc?.name||"เอกสาร"),date))}
+  return rows;
+}
+function renderDetectedRows(){
+  const body=$("#detectedBody");
+  if(!detectedRows.length){
+    body.innerHTML=`<tr><td colspan="8"><div class="notice warn">ยังไม่พบค่าที่ระบบมั่นใจ คุณสามารถกด “+ เพิ่มแถว” แล้วกรอกค่าจากเอกสารได้</div></td></tr>`;
+    $("#ocrStatus").textContent="ไม่พบค่าที่ระบุได้อัตโนมัติ";
+    return;
+  }
+  body.innerHTML=detectedRows.map((r,i)=>`<tr data-i="${i}">
+    <td><input type="checkbox" class="d-use" ${r.selected?"checked":""}></td>
+    <td><select class="d-type">
+      ${["blood_pressure","weight","pulse","glucose","lab","exercise","note"].map(t=>`<option value="${t}" ${r.type===t?"selected":""}>${typeLabel(t)}</option>`).join("")}
+    </select></td>
+    <td><input class="d-date date-input" type="datetime-local" value="${toLocalInput(r.date)}"></td>
+    <td><input class="d-v1" type="number" step="any" value="${esc(r.value)}"></td>
+    <td><input class="d-v2" type="number" step="any" value="${esc(r.value2??"")}"></td>
+    <td><input class="d-unit" value="${esc(r.unit||"")}"></td>
+    <td><input class="d-note note-input" value="${esc(r.note||"")}"></td>
+    <td><button type="button" class="btn mini d-remove">ลบ</button></td>
+  </tr>`).join("");
+  $$("#detectedBody tr").forEach(tr=>{
+    $$("input,select",tr).forEach(el=>el.onchange=()=>syncDetectedFromTable());
+    $(".d-remove",tr).onclick=()=>{detectedRows.splice(Number(tr.dataset.i),1);renderDetectedRows()};
+  });
+  $("#ocrStatus").textContent=`พบ ${detectedRows.length} รายการ • กรุณาตรวจค่าก่อน Save`;
+}
+function syncDetectedFromTable(){
+  detectedRows=$$("#detectedBody tr[data-i]").map(tr=>({
+    selected:$(".d-use",tr).checked,type:$(".d-type",tr).value,
+    date:new Date($(".d-date",tr).value).toISOString(),
+    value:numOrText($(".d-v1",tr).value),value2:numOrText($(".d-v2",tr).value),
+    unit:$(".d-unit",tr).value.trim(),note:$(".d-note",tr).value.trim()
+  }));
+}
+$("#reanalyzeTextBtn").onclick=()=>{detectedRows=parseHealthText($("#ocrText").value,currentOcrDoc);renderDetectedRows()};
+$("#addDetectedRowBtn").onclick=()=>{syncDetectedFromTable();detectedRows.push(mkDetected("lab","","","","กรอกจาก "+(currentOcrDoc?.name||"เอกสาร"),new Date().toISOString()));renderDetectedRows()};
+$("#saveDetectedBtn").onclick=()=>{
+  syncDetectedFromTable();
+  const selected=detectedRows.filter(r=>r.selected);
+  if(!selected.length){$("#ocrStatus").textContent="ยังไม่ได้เลือกรายการที่จะ Save";return}
+  const existing=new Set(db.records.map(signature));let saved=0,skipped=0;
+  for(const r of selected){
+    const rec={id:uid(),date:r.date,type:r.type,value:r.value,value2:r.value2,unit:r.unit,note:r.note,source:currentOcrDoc?.name||"Smart Import",created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+    const err=validateRec(rec); if(err.length||existing.has(signature(rec))){skipped++;continue}
+    db.records.push(rec);existing.add(signature(rec));saved++;
+  }
+  if(currentOcrDoc){currentOcrDoc.note=`Smart Import: saved ${saved} record(s)`;currentOcrDoc.last_ocr_at=new Date().toISOString()}
+  save();$("#ocrStatus").textContent=`บันทึกสำเร็จ ${saved} รายการ${skipped?` • ข้าม ${skipped}`:""}`;
+  setTimeout(()=>{$("#ocrDialog").close();go("dashboard")},650);
+};
+
