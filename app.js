@@ -1283,11 +1283,16 @@ console.info("Personal Healthcare v9.1.2 Display Hotfix loaded");
 
 /* ================= v9.2 Integrated AI Health Coach ================= */
 function coachWeights(){
-  return db.records.filter(r=>r.type==="weight"&&Number.isFinite(Number(r.value))).map(r=>({date:new Date(r.date),value:Number(r.value)})).filter(r=>!isNaN(r.date)).sort((a,b)=>a.date-b.date);
+  const rows=db.records.filter(r=>r.type==="weight"&&Number.isFinite(Number(r.value))).map(r=>({date:new Date(r.date),value:Number(r.value)})).filter(r=>!isNaN(r.date)).sort((a,b)=>a.date-b.date);
+  const byDay=new Map();
+  for(const r of rows){const key=`${r.date.getFullYear()}-${String(r.date.getMonth()+1).padStart(2,"0")}-${String(r.date.getDate()).padStart(2,"0")}`;byDay.set(key,r)}
+  return [...byDay.values()].sort((a,b)=>a.date-b.date);
 }
 function coachWeightTrend(days){
   const cut=Date.now()-days*86400000,rows=coachWeights().filter(r=>r.date.getTime()>=cut);
   if(rows.length<2)return {days,count:rows.length,delta:null,label:"ข้อมูลไม่พอ"};
+  const span=(rows.at(-1).date-rows[0].date)/86400000;
+  if(span<1)return {days,count:rows.length,delta:null,label:"รอข้อมูลวันถัดไป"};
   const delta=rows.at(-1).value-rows[0].value;
   return {days,count:rows.length,delta,label:`${delta>0?"+":""}${delta.toFixed(1)} kg`};
 }
@@ -1306,14 +1311,14 @@ function coachItem(x){return `<div class="item coach-item ${esc(x.level||"info")
 function renderHealthCoach(){
   if(!$("#coachHeadline"))return;
   const goal=db.weightGoal||{},bmi=bmiAssessment(),bp=latest("blood_pressure"),logs=[...(db.bodyLogs||[])].sort((a,b)=>new Date(a.date)-new Date(b.date)),last=logs.at(-1),weights=coachWeights(),t7=coachWeightTrend(7),t30=coachWeightTrend(30),t90=coachWeightTrend(90),adh=coachAdherence7();
-  const labFindings=medicalLabFindings(),followups=labFindings.filter(x=>x.level==="warn"||x.level==="danger");
+  const labFindings=medicalLabFindings(),needsFollowup=x=>["warn","watch","danger","consult","urgent"].includes(String(x?.level||"").toLowerCase()),followups=labFindings.filter(needsFollowup);
   if(bp&&bpAssessment(bp).level!=="ok")followups.unshift({level:bpAssessment(bp).level,title:"ความดัน",text:`${bp.value}/${bp.value2} mmHg`});
   const dataParts=[weights.length>0,bmi!==null,bp!==undefined,db.records.some(r=>r.type==="lab"),logs.length>0].filter(Boolean).length;
   $("#coachDataState").textContent=dataParts>=4?"พร้อม":dataParts>=2?"บางส่วน":"เริ่มต้น";$("#coachDataNote").textContent=`มีข้อมูล ${dataParts}/5 กลุ่มหลัก`;
   $("#coachWeightTrend").textContent=t30.delta==null?"—":t30.label;$("#coachWeightNote").textContent=t30.count>=2?`${t30.count} ค่าใน 30 วัน`:"ต้องมีอย่างน้อย 2 ค่าใน 30 วัน";
   $("#coachAdherence").textContent=adh.pct==null?"—":`${adh.pct}%`;$("#coachFollowups").textContent=String(followups.length);
   let headline="เริ่มจากเก็บข้อมูลให้ต่อเนื่อง";
-  if(followups.some(x=>x.level==="danger"))headline="มีข้อมูลสำคัญที่ควรประเมินก่อนเร่งลดน้ำหนัก";
+  if(followups.some(x=>["danger","urgent","consult"].includes(x.level)))headline="มีข้อมูลสำคัญที่ควรประเมินก่อนเร่งลดน้ำหนัก";
   else if(t30.delta!=null&&t30.delta<-.2)headline="แนวโน้มน้ำหนักกำลังลดลง — รักษาความสม่ำเสมอ";
   else if(bmi&&bmi.bmi>=25)headline="โฟกัสการลดน้ำหนักแบบค่อยเป็นค่อยไปและดูแลเมตาบอลิก";
   else if(dataParts>=4)headline="ข้อมูลพร้อมสำหรับติดตามสุขภาพแบบองค์รวม";
@@ -1335,7 +1340,7 @@ function renderHealthCoach(){
   $("#coachEvidence").innerHTML=evidence.length?evidence.map(coachItem).join(""):coachItem({level:"info",title:"ยังไม่มีหลักฐานเพียงพอ",text:"เพิ่มน้ำหนัก ส่วนสูง ความดัน และผลแล็บเพื่อให้คำแนะนำเฉพาะขึ้น"});
   $("#coachTrends").innerHTML=[t7,t30,t90].map(t=>`<div class="coach-trend-card"><span>${t.days} วัน</span><b>${esc(t.label)}</b><small>${t.count} ค่าน้ำหนัก</small></div>`).join("");
   const safety=[];
-  if(followups.length)safety.push(...followups.slice(0,4).map(x=>({level:x.level,title:x.title,text:x.text,evidence:"Medical Analysis Engine"})));
+  if(followups.length)safety.push(...followups.slice(0,4).map(x=>({level:x.level==="watch"?"watch":["consult","urgent"].includes(x.level)?"danger":x.level,title:x.title,text:x.text,evidence:"Medical Analysis Engine"})));
   if((db.medications||[]).length)safety.push({level:"info",title:"อย่าหยุดหรือปรับยาเอง",text:"ใช้คำเตือนใน Medication Safety และยืนยันกับแพทย์หรือเภสัชกร",evidence:`มียา ${(db.medications||[]).length} รายการ`});
   if(!safety.length)safety.push({level:"ok",title:"ไม่พบสัญญาณเร่งด่วนจากข้อมูลที่มี",text:"ผลนี้ขึ้นกับข้อมูลที่บันทึก หากมีอาการผิดปกติควรขอคำแนะนำจากบุคลากรสุขภาพ",evidence:"ข้อมูลปัจจุบันในแอป"});
   $("#coachSafety").innerHTML=safety.map(coachItem).join("");
