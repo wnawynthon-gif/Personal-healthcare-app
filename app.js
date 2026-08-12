@@ -1274,3 +1274,8 @@ $("#weightGoalForm").onsubmit=e=>{e.preventDefault();db.weightGoal={height:Numbe
 $("#bodyLogForm").onsubmit=e=>{e.preventDefault();const val=id=>numOrText($(id).value),log={id:uid(),date:$("#wmDate").value,weight:val("#wmWeight"),waist:val("#wmWaistInput"),calories:val("#wmCaloriesEaten"),protein:val("#wmProteinEaten"),steps:val("#wmStepsDone"),cardio:val("#wmCardio"),strength:val("#wmStrength"),created_at:new Date().toISOString()};if(![log.weight,log.waist,log.calories,log.protein,log.steps,log.cardio,log.strength].some(x=>x!==null)){alert("กรอกอย่างน้อย 1 ค่า");return}db.bodyLogs.push(log);if(log.weight!==null)db.records.push({id:uid(),date:new Date(log.date+"T08:00:00").toISOString(),type:"weight",value:log.weight,value2:null,unit:"kg",note:"Weight Management v9.1",created_at:new Date().toISOString(),updated_at:new Date().toISOString()});save();e.target.reset();$("#wmDate").value=new Date().toISOString().slice(0,10)};
 $("#wmRange").onchange=renderWeightManagement;$("#wmDate").value=new Date().toISOString().slice(0,10);renderWeightManagement();
 console.info("Personal Healthcare v9.1 Weight Management loaded");
+
+// v9.1.2: all module wrappers are now registered; render late-loaded panels once.
+renderMedicalInsight();
+renderWeightManagement();
+console.info("Personal Healthcare v9.1.2 Display Hotfix loaded");
