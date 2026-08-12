@@ -1,11 +1,11 @@
 {
-  "name": "Personal Healthcare v9.1.3",
-  "short_name": "Health v9.1.3",
+  "name": "Personal Healthcare v9.2",
+  "short_name": "Health v9.2",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f7f7",
   "theme_color": "#0f766e",
-  "description": "Personal Healthcare v9.1.3 with complete Do/Limit/Avoid columns on iPad, risk plans, BMI, weight and body tracking.",
+  "description": "Personal Healthcare v9.2 with an integrated health coach, evidence-based daily plans, safety follow-ups, BMI, weight and body tracking.",
   "icons": []
 }

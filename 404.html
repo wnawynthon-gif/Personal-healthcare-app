@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v9.1.3</title>
+  <title>Personal Healthcare v9.2</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -13,11 +13,12 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v9.1.3 • Guidance + Weight Tracking</small></div>
+      <div><strong>Personal Healthcare</strong><small>v9.2 • Integrated AI Coach</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
       <button class="nav" data-view="weight">ควบคุมน้ำหนัก</button>
+      <button class="nav" data-view="coach">AI Health Coach</button>
       <button class="nav" data-view="records">ข้อมูลสุขภาพ</button>
       <button class="nav" data-view="import">นำเข้าข้อมูล</button>
       <button class="nav" data-view="meds">ยา & เตือน</button>
@@ -45,7 +46,7 @@
 
     <section class="view active" id="view-dashboard">
       <div class="notice info">
-        <strong>v9.1.3:</strong> Personalised Do / Limit / Avoid พร้อม Weight & Body Tracking — แสดงครบทุกคอลัมน์บน iPad
+        <strong>v9.2:</strong> AI Health Coach รวมแนวโน้มน้ำหนัก BMI รอบเอว ความดัน ผลแล็บ อาหาร และการออกกำลัง เพื่อจัดแผนที่ทำได้วันนี้
       </div>
 
       <div class="kpis">
@@ -187,6 +188,29 @@
       <article class="panel"><div class="panel-head"><div><h3>ประวัติ 14 รายการล่าสุด</h3><small>ลบรายการที่กรอกผิดได้</small></div></div><div class="table-wrap"><table><thead><tr><th>วันที่</th><th>น้ำหนัก</th><th>รอบเอว</th><th>แคลอรี</th><th>โปรตีน</th><th>ก้าว</th><th>กิจกรรม</th><th></th></tr></thead><tbody id="wmHistory"></tbody></table></div></article>
     </section>
 
+
+    <section class="view" id="view-coach">
+      <div class="notice info"><strong>AI Health Coach v9.2</strong> วิเคราะห์ข้อมูลที่บันทึกไว้ในแอปแบบองค์รวมและแสดงเหตุผลจากข้อมูลจริง • เป็นคำแนะนำดูแลสุขภาพ ไม่ใช่การวินิจฉัยหรือคำสั่งรักษา</div>
+      <div class="coach-hero panel">
+        <div><span class="v84-badge">ภาพรวมวันนี้</span><h2 id="coachHeadline">กำลังเตรียมคำแนะนำ…</h2><p id="coachSummary" class="muted"></p></div>
+        <button class="btn primary" id="refreshCoachBtn" type="button">วิเคราะห์ใหม่</button>
+      </div>
+      <div class="coach-kpis">
+        <article class="kpi"><span>ความพร้อมของข้อมูล</span><b id="coachDataState">—</b><small id="coachDataNote">ตรวจข้อมูลล่าสุด</small></article>
+        <article class="kpi"><span>แนวโน้มน้ำหนัก</span><b id="coachWeightTrend">—</b><small id="coachWeightNote">ต้องมีอย่างน้อย 2 ค่า</small></article>
+        <article class="kpi"><span>การทำตามเป้าหมาย 7 วัน</span><b id="coachAdherence">—</b><small>อาหาร โปรตีน ก้าว และกิจกรรม</small></article>
+        <article class="kpi"><span>สิ่งที่ต้องติดตาม</span><b id="coachFollowups">0</b><small>จาก vital signs และผลแล็บ</small></article>
+      </div>
+      <div class="grid two coach-grid">
+        <article class="panel"><div class="panel-head split"><div><h3>แผนวันนี้</h3><small>เลือกเฉพาะสิ่งที่สำคัญและทำได้จริง</small></div><span class="v84-badge">Personalised</span></div><div id="coachToday" class="stack"></div></article>
+        <article class="panel"><div class="panel-head"><div><h3>เหตุผลจากข้อมูลของคุณ</h3><small>ทุกข้อแสดงข้อมูลที่ใช้ประกอบคำแนะนำ</small></div></div><div id="coachEvidence" class="stack"></div></article>
+      </div>
+      <div class="grid two coach-grid">
+        <article class="panel"><div class="panel-head"><div><h3>แนวโน้ม 7 / 30 / 90 วัน</h3><small>ไม่สรุปจากน้ำหนักขึ้นลงเพียงวันเดียว</small></div></div><div id="coachTrends" class="coach-trends"></div></article>
+        <article class="panel"><div class="panel-head"><div><h3>ข้อควรระวังและขั้นตอนถัดไป</h3><small>ไม่สั่งหยุดยา ไม่แทนแพทย์ และไม่เดาข้อมูลที่ไม่มี</small></div></div><div id="coachSafety" class="stack"></div></article>
+      </div>
+      <div class="medical-sources">ระบบใช้เกณฑ์คัดกรองและคำแนะนำพฤติกรรมที่มีอยู่ใน Medical Analysis Engine (WHO / NICE / NHS / CDC / NKF) ร่วมกับข้อมูลที่ผู้ใช้บันทึก • กรณีมีอาการฉุกเฉินให้ติดต่อบริการฉุกเฉินทันที</div>
+    </section>
 
     <section class="view" id="view-records">
       <div class="panel">

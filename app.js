@@ -36,6 +36,7 @@ function go(view){
   const meta={
     dashboard:["ภาพรวมสุขภาพ","สรุปข้อมูลล่าสุด แนวโน้ม และสิ่งที่ควรติดตาม"],
     weight:["ควบคุมน้ำหนัก","เป้าหมาย BMI รอบเอว อาหาร และการออกกำลัง"],
+    coach:["AI Health Coach","แผนวันนี้จากน้ำหนัก BMI รอบเอว ความดัน ผลแล็บ อาหาร และกิจกรรม"],
     records:["ข้อมูลสุขภาพ","บันทึกและจัดการข้อมูลสุขภาพแบบโครงสร้าง"],
     import:["นำเข้าข้อมูล","Import Center v8.0 — ตรวจและแก้ไขก่อนบันทึก"],
     meds:["ยา & เตือน","ช่วยจัดรายการยาและเวลาเตือน"],
@@ -447,7 +448,7 @@ async function renderFiles(){
   }
 }
 
-function exportData(){downloadText(`personal-healthcare-v9.1.1-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({version:"9.1.1",exported_at:new Date().toISOString(),...db},null,2),"application/json")}
+function exportData(){downloadText(`personal-healthcare-v9.2-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({version:"9.2",exported_at:new Date().toISOString(),...db},null,2),"application/json")}
 $("#exportBtn").onclick=exportData;$("#exportBtn2").onclick=exportData;
 $("#resetAll").onclick=()=>{if(confirm("ล้างข้อมูลทั้งหมดในเครื่อง? การกระทำนี้ย้อนกลับไม่ได้")){localStorage.removeItem(KEY);db=structuredClone(blank);save()}}
 
@@ -1279,3 +1280,67 @@ console.info("Personal Healthcare v9.1 Weight Management loaded");
 renderMedicalInsight();
 renderWeightManagement();
 console.info("Personal Healthcare v9.1.2 Display Hotfix loaded");
+
+/* ================= v9.2 Integrated AI Health Coach ================= */
+function coachWeights(){
+  return db.records.filter(r=>r.type==="weight"&&Number.isFinite(Number(r.value))).map(r=>({date:new Date(r.date),value:Number(r.value)})).filter(r=>!isNaN(r.date)).sort((a,b)=>a.date-b.date);
+}
+function coachWeightTrend(days){
+  const cut=Date.now()-days*86400000,rows=coachWeights().filter(r=>r.date.getTime()>=cut);
+  if(rows.length<2)return {days,count:rows.length,delta:null,label:"ข้อมูลไม่พอ"};
+  const delta=rows.at(-1).value-rows[0].value;
+  return {days,count:rows.length,delta,label:`${delta>0?"+":""}${delta.toFixed(1)} kg`};
+}
+function coachAdherence7(){
+  const goal=db.weightGoal||{},cut=Date.now()-7*86400000,logs=(db.bodyLogs||[]).filter(x=>new Date(x.date).getTime()>=cut);
+  let met=0,total=0;
+  for(const x of logs){
+    if(goal.calories&&Number.isFinite(Number(x.calories))){total++;if(Number(x.calories)<=Number(goal.calories))met++}
+    if(goal.protein&&Number.isFinite(Number(x.protein))){total++;if(Number(x.protein)>=Number(goal.protein))met++}
+    if(goal.steps&&Number.isFinite(Number(x.steps))){total++;if(Number(x.steps)>=Number(goal.steps))met++}
+    if(Number(x.cardio)>0||Number(x.strength)>0){total++;met++}
+  }
+  return {logs:logs.length,total,met,pct:total?Math.round(met/total*100):null};
+}
+function coachItem(x){return `<div class="item coach-item ${esc(x.level||"info")}"><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small>${x.evidence?`<span>อ้างอิงจาก: ${esc(x.evidence)}</span>`:""}</div></div>`}
+function renderHealthCoach(){
+  if(!$("#coachHeadline"))return;
+  const goal=db.weightGoal||{},bmi=bmiAssessment(),bp=latest("blood_pressure"),logs=[...(db.bodyLogs||[])].sort((a,b)=>new Date(a.date)-new Date(b.date)),last=logs.at(-1),weights=coachWeights(),t7=coachWeightTrend(7),t30=coachWeightTrend(30),t90=coachWeightTrend(90),adh=coachAdherence7();
+  const labFindings=medicalLabFindings(),followups=labFindings.filter(x=>x.level==="warn"||x.level==="danger");
+  if(bp&&bpAssessment(bp).level!=="ok")followups.unshift({level:bpAssessment(bp).level,title:"ความดัน",text:`${bp.value}/${bp.value2} mmHg`});
+  const dataParts=[weights.length>0,bmi!==null,bp!==undefined,db.records.some(r=>r.type==="lab"),logs.length>0].filter(Boolean).length;
+  $("#coachDataState").textContent=dataParts>=4?"พร้อม":dataParts>=2?"บางส่วน":"เริ่มต้น";$("#coachDataNote").textContent=`มีข้อมูล ${dataParts}/5 กลุ่มหลัก`;
+  $("#coachWeightTrend").textContent=t30.delta==null?"—":t30.label;$("#coachWeightNote").textContent=t30.count>=2?`${t30.count} ค่าใน 30 วัน`:"ต้องมีอย่างน้อย 2 ค่าใน 30 วัน";
+  $("#coachAdherence").textContent=adh.pct==null?"—":`${adh.pct}%`;$("#coachFollowups").textContent=String(followups.length);
+  let headline="เริ่มจากเก็บข้อมูลให้ต่อเนื่อง";
+  if(followups.some(x=>x.level==="danger"))headline="มีข้อมูลสำคัญที่ควรประเมินก่อนเร่งลดน้ำหนัก";
+  else if(t30.delta!=null&&t30.delta<-.2)headline="แนวโน้มน้ำหนักกำลังลดลง — รักษาความสม่ำเสมอ";
+  else if(bmi&&bmi.bmi>=25)headline="โฟกัสการลดน้ำหนักแบบค่อยเป็นค่อยไปและดูแลเมตาบอลิก";
+  else if(dataParts>=4)headline="ข้อมูลพร้อมสำหรับติดตามสุขภาพแบบองค์รวม";
+  $("#coachHeadline").textContent=headline;
+  $("#coachSummary").textContent=`วิเคราะห์จากข้อมูล ${db.records.length} รายการ และบันทึกพฤติกรรม ${logs.length} วัน โดยดูแนวโน้มหลายวันแทนค่าครั้งเดียว`;
+  const today=[];
+  if(!goal.targetWeight)today.push({level:"info",title:"ตั้งเป้าหมายน้ำหนัก",text:"กำหนดเป้าหมายและอัตราประมาณ 0.25–0.5 kg/สัปดาห์ก่อนเริ่มติดตาม",evidence:"ยังไม่มีเป้าหมายใน Weight Management"});
+  if(last&&goal.protein&&Number(last.protein)<Number(goal.protein))today.push({level:"watch",title:"เติมโปรตีนให้ใกล้เป้าหมาย",text:`ตั้งเป้า ${goal.protein} g/วัน โดยกระจายตามมื้อและเลือกแหล่งที่เหมาะกับโรคประจำตัว`,evidence:`ล่าสุด ${last.protein||0} g`});
+  if(last&&goal.steps&&Number(last.steps)<Number(goal.steps))today.push({level:"info",title:"เพิ่มการเคลื่อนไหวแบบไม่กดเข่า",text:"แบ่งกิจกรรมเป็นช่วงสั้น ๆ เลือกเดินราบ ว่ายน้ำ หรือจักรยานอยู่กับที่ตามอาการ",evidence:`ล่าสุด ${last.steps||0} จากเป้าหมาย ${goal.steps} ก้าว`});
+  if(bp&&bpAssessment(bp).level==="warn")today.push({level:"watch",title:"วัดความดันซ้ำอย่างเป็นระบบ",text:"พักก่อนวัดและเก็บเช้า–เย็นเพื่อดูค่าเฉลี่ยหลายวัน",evidence:`ล่าสุด ${bp.value}/${bp.value2} mmHg`});
+  if(!last||Date.now()-new Date(last.date).getTime()>3*86400000)today.push({level:"info",title:"บันทึกข้อมูลวันนี้",text:"เพิ่มน้ำหนักหรือรอบเอว พร้อมอาหารและกิจกรรมอย่างน้อยหนึ่งรายการ",evidence:"ไม่มี body log ใน 3 วันที่ผ่านมา"});
+  if(!today.length)today.push({level:"ok",title:"ทำแผนเดิมต่ออย่างสม่ำเสมอ",text:"คงเป้าหมายอาหาร โปรตีน ก้าว และกิจกรรมไว้ แล้วทบทวนแนวโน้มอีก 7 วัน",evidence:"ข้อมูลล่าสุดอยู่ใกล้เป้าหมายที่ตั้งไว้"});
+  $("#coachToday").innerHTML=today.slice(0,4).map(coachItem).join("");
+  const evidence=[];
+  if(bmi)evidence.push({level:bmi.level,title:`BMI ${bmi.bmi.toFixed(1)} • ${bmi.label}`,text:`คำนวณจาก ${bmi.kg} kg และ ${bmi.cm} cm`,evidence:`น้ำหนัก ${fmtDate(bmi.weightDate)} • ส่วนสูง ${fmtDate(bmi.heightDate)}`});
+  if(last?.waist)evidence.push({level:"info",title:`รอบเอวล่าสุด ${last.waist} cm`,text:"ใช้ติดตามแนวโน้มร่วมกับน้ำหนัก ไม่ใช้วินิจฉัยเพียงค่าเดียว",evidence:new Date(last.date).toLocaleDateString("th-TH")});
+  if(bp)evidence.push({level:bpAssessment(bp).level,title:`ความดัน ${bp.value}/${bp.value2} mmHg`,text:bpAssessment(bp).label,evidence:fmtDate(bp.date)});
+  evidence.push(...labFindings.slice(0,3).map(x=>({...x,evidence:"ผลตรวจล่าสุดที่บันทึกในแอป"})));
+  $("#coachEvidence").innerHTML=evidence.length?evidence.map(coachItem).join(""):coachItem({level:"info",title:"ยังไม่มีหลักฐานเพียงพอ",text:"เพิ่มน้ำหนัก ส่วนสูง ความดัน และผลแล็บเพื่อให้คำแนะนำเฉพาะขึ้น"});
+  $("#coachTrends").innerHTML=[t7,t30,t90].map(t=>`<div class="coach-trend-card"><span>${t.days} วัน</span><b>${esc(t.label)}</b><small>${t.count} ค่าน้ำหนัก</small></div>`).join("");
+  const safety=[];
+  if(followups.length)safety.push(...followups.slice(0,4).map(x=>({level:x.level,title:x.title,text:x.text,evidence:"Medical Analysis Engine"})));
+  if((db.medications||[]).length)safety.push({level:"info",title:"อย่าหยุดหรือปรับยาเอง",text:"ใช้คำเตือนใน Medication Safety และยืนยันกับแพทย์หรือเภสัชกร",evidence:`มียา ${(db.medications||[]).length} รายการ`});
+  if(!safety.length)safety.push({level:"ok",title:"ไม่พบสัญญาณเร่งด่วนจากข้อมูลที่มี",text:"ผลนี้ขึ้นกับข้อมูลที่บันทึก หากมีอาการผิดปกติควรขอคำแนะนำจากบุคลากรสุขภาพ",evidence:"ข้อมูลปัจจุบันในแอป"});
+  $("#coachSafety").innerHTML=safety.map(coachItem).join("");
+}
+const _v92RenderAll=renderAll;renderAll=function(){_v92RenderAll();renderHealthCoach()};
+if($("#refreshCoachBtn"))$("#refreshCoachBtn").onclick=renderHealthCoach;
+renderHealthCoach();
+console.info("Personal Healthcare v9.2 Integrated AI Health Coach loaded");

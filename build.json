@@ -1,6 +1,6 @@
 {
-  "version": "V9.1.3",
-  "buildId": "9.1.3-20260813",
-  "ocrEngine": "V9.0 Personalised Guidance + Medical Analysis Engine",
-  "features": ["Do / Limit / Avoid", "Medication Safety", "Health Goals", "Monitoring Plan", "Historical Comparison", "Data Quality", "Weight & Body Tracking"]
+  "version": "V9.2",
+  "buildId": "9.2-20260813",
+  "ocrEngine": "V9.2 Integrated AI Health Coach + Medical Analysis Engine",
+  "features": ["Integrated AI Health Coach", "7/30/90-day Trends", "Daily Action Plan", "Evidence & Safety", "Do / Limit / Avoid", "Medication Safety", "Weight & Body Tracking"]
 }
