@@ -1,6 +1,6 @@
 {
-  "version": "V9.0",
-  "buildId": "9.0.0-20260812",
-  "ocrEngine": "V9.0 Personalised Guidance + Medical Analysis Engine",
-  "features": ["Do / Limit / Avoid", "Medication Safety", "Health Goals", "Monitoring Plan", "Historical Comparison", "Data Quality"]
+  "version": "V9.1",
+  "buildId": "9.1.0-20260812",
+  "ocrEngine": "V8.3 Validation Engine",
+  "weightManagement": "V9.1 Weight & Body Tracking"
 }

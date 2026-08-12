@@ -1,4 +1,13 @@
-# Personal Healthcare v8.3 — Validation Engine
+# Personal Healthcare v9.1 — Weight Management & Body Tracking
+
+## เพิ่มใหม่ใน v9.1
+
+- ตั้งเป้าหมายน้ำหนักและอัตราลดต่อสัปดาห์
+- คำนวณ BMI จากส่วนสูงและน้ำหนักล่าสุด
+- บันทึกรอบเอว แคลอรี โปรตีน ก้าว คาร์ดิโอ และเวท
+- กราฟน้ำหนัก 7 / 30 / 90 วัน พร้อมคำแนะนำตามข้อมูล
+- ใช้ข้อความชัดเจนว่าเป็น health guidance ไม่ใช่การวินิจฉัยโรค
+- รัน `supabase_schema_v9_1.sql` เพื่อเตรียมตารางฐานข้อมูลสำหรับโมดูลนี้
 
 เวอร์ชันนี้สร้างใหม่ให้ Import เสถียรกว่าเดิม โดยไม่ผูกการ Save กับการตรวจไฟล์ทั้งก้อน
 
@@ -103,12 +112,3 @@ Security:
 - Save records include confirmation status, validation status, AI confidence, reference range, source and AI flag.
 - Review screen shows extracted / validated / review / confirmed counters.
 - AI extraction and medical interpretation are treated as separate steps.
-
-
-## v9.0 — Personalised Do / Limit / Avoid
-- เพิ่มคำแนะนำ ควรทำ / ควรลด / ควรหลีกเลี่ยง โดยอิง BMI, BP, glucose/HbA1c, lipids และ uric acid
-- ทุกคำแนะนำแสดงเหตุผลจากข้อมูลที่เกี่ยวข้อง
-- Medication Safety rule เบื้องต้น: simvastatin, amlodipine, allopurinol
-- ไม่สั่งหยุดยาเอง และไม่สร้างข้อห้ามอาหารแบบเด็ดขาดเมื่อข้อมูลไม่เพียงพอ
-- เพิ่ม Health Goals และ Monitoring Plan ต่อเนื่องจาก Risk & Action Plan
-Deploy v9.0

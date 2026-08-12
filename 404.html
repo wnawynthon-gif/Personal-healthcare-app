@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v8.4</title>
+  <title>Personal Healthcare v9.1</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -13,10 +13,11 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v8.4 • Vital Signs Update</small></div>
+      <div><strong>Personal Healthcare</strong><small>v9.1 • Weight & Body Tracking</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
+      <button class="nav" data-view="weight">ควบคุมน้ำหนัก</button>
       <button class="nav" data-view="records">ข้อมูลสุขภาพ</button>
       <button class="nav" data-view="import">นำเข้าข้อมูล</button>
       <button class="nav" data-view="meds">ยา & เตือน</button>
@@ -44,7 +45,7 @@
 
     <section class="view active" id="view-dashboard">
       <div class="notice info">
-        <strong>v8.1:</strong> Smart Import: HEIC/JPG/PNG/PDF → Preview → OCR → ตรวจค่า → Save เข้า Dashboard พร้อมเก็บไฟล์จริงในเครื่อง.
+        <strong>v9.1:</strong> ติดตามเป้าหมายน้ำหนัก BMI รอบเอว อาหาร และการออกกำลัง โดยเป็นคำแนะนำสุขภาพ ไม่ใช่การวินิจฉัยโรค
       </div>
 
       <div class="kpis">
@@ -83,6 +84,40 @@
           <div id="recentRecords" class="stack"></div>
         </article>
       </div>
+    </section>
+
+    <section class="view" id="view-weight">
+      <div class="notice info"><strong>Weight Management v9.1</strong> หากตั้งครรภ์ มีโรคประจำตัว หรือใช้ยาที่มีผลต่อน้ำหนัก ควรปรึกษาแพทย์ก่อนลดน้ำหนัก</div>
+      <div class="wm-kpis">
+        <article class="kpi"><span>น้ำหนักปัจจุบัน</span><b id="wmCurrent">—</b><small id="wmChange">ยังไม่มีข้อมูล</small></article>
+        <article class="kpi"><span>BMI</span><b id="wmBmi">—</b><small id="wmBmiStatus">กรอกส่วนสูงและน้ำหนัก</small></article>
+        <article class="kpi"><span>เป้าหมาย</span><b id="wmTarget">—</b><small id="wmRemaining">ยังไม่ได้ตั้งเป้าหมาย</small></article>
+        <article class="kpi"><span>รอบเอวล่าสุด</span><b id="wmWaist">—</b><small>ติดตามแนวโน้ม ไม่ใช้วินิจฉัย</small></article>
+      </div>
+      <div class="grid two">
+        <article class="panel"><div class="panel-head"><div><h3>ตั้งเป้าหมาย</h3><small>บันทึกในอุปกรณ์นี้ และพร้อมซิงก์ Supabase</small></div></div>
+          <form id="weightGoalForm" class="form-grid">
+            <label>ส่วนสูง (cm)<input class="input" id="wmHeight" type="number" min="100" max="230" step="0.1" required></label><label>น้ำหนักเป้าหมาย (kg)<input class="input" id="wmTargetInput" type="number" min="30" max="300" step="0.1" required></label>
+            <label>เป้าหมายต่อสัปดาห์ (kg)<input class="input" id="wmWeekly" type="number" min="0.1" max="1" step="0.1" value="0.5"></label><label>เป้าหมายแคลอรี/วัน<input class="input" id="wmCalories" type="number" min="800" max="5000" step="10"></label>
+            <label>เป้าหมายโปรตีน (g/วัน)<input class="input" id="wmProtein" type="number" min="20" max="300"></label><label>เป้าหมายก้าว/วัน<input class="input" id="wmSteps" type="number" min="500" max="50000" step="500"></label>
+            <button class="btn primary full" type="submit">บันทึกเป้าหมาย</button>
+          </form>
+        </article>
+        <article class="panel"><div class="panel-head"><div><h3>บันทึกวันนี้</h3><small>น้ำหนัก รอบเอว อาหาร และกิจกรรม</small></div></div>
+          <form id="bodyLogForm" class="form-grid">
+            <label>วันที่<input class="input" id="wmDate" type="date" required></label><label>น้ำหนัก (kg)<input class="input" id="wmWeight" type="number" min="20" max="400" step="0.1"></label>
+            <label>รอบเอว (cm)<input class="input" id="wmWaistInput" type="number" min="30" max="250" step="0.1"></label><label>พลังงานที่กิน (kcal)<input class="input" id="wmCaloriesEaten" type="number" min="0" max="10000"></label>
+            <label>โปรตีน (g)<input class="input" id="wmProteinEaten" type="number" min="0" max="500"></label><label>จำนวนก้าว<input class="input" id="wmStepsDone" type="number" min="0" max="100000"></label>
+            <label>คาร์ดิโอ (นาที)<input class="input" id="wmCardio" type="number" min="0" max="600"></label><label>เวทเทรนนิ่ง (นาที)<input class="input" id="wmStrength" type="number" min="0" max="600"></label>
+            <button class="btn primary full" type="submit">บันทึกข้อมูลวันนี้</button>
+          </form>
+        </article>
+      </div>
+      <div class="grid two">
+        <article class="panel"><div class="panel-head"><div><h3>กราฟน้ำหนัก</h3><small><select id="wmRange"><option value="7">7 วัน</option><option value="30" selected>30 วัน</option><option value="90">90 วัน</option></select></small></div></div><div id="wmChart" class="chart-empty">ยังไม่มีข้อมูลเพียงพอ</div></article>
+        <article class="panel"><div class="panel-head"><div><h3>คำแนะนำตามข้อมูล</h3><small>Health guidance • ไม่ใช่การวินิจฉัย</small></div></div><div id="wmGuidance" class="stack"></div></article>
+      </div>
+      <article class="panel"><div class="panel-head"><div><h3>ประวัติ 14 รายการล่าสุด</h3><small>ลบรายการที่กรอกผิดได้</small></div></div><div class="table-wrap"><table><thead><tr><th>วันที่</th><th>น้ำหนัก</th><th>รอบเอว</th><th>แคลอรี</th><th>โปรตีน</th><th>ก้าว</th><th>กิจกรรม</th><th></th></tr></thead><tbody id="wmHistory"></tbody></table></div></article>
     </section>
 
     <section class="view" id="view-records">
