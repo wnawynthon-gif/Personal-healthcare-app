@@ -1,5 +1,5 @@
 {
-  "version": "V8.7",
-  "buildId": "8.7.0-20260812",
-  "ocrEngine": "V8.7 Medical Analysis Engine + Data Quality"
+  "version": "V8.8",
+  "buildId": "8.8.0-20260812",
+  "ocrEngine": "V8.8 Medical Analysis Engine + Data Quality"
 }
