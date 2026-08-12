@@ -111,3 +111,4 @@ Security:
 - Medication Safety rule เบื้องต้น: simvastatin, amlodipine, allopurinol
 - ไม่สั่งหยุดยาเอง และไม่สร้างข้อห้ามอาหารแบบเด็ดขาดเมื่อข้อมูลไม่เพียงพอ
 - เพิ่ม Health Goals และ Monitoring Plan ต่อเนื่องจาก Risk & Action Plan
+Deploy v9.0
