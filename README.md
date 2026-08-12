@@ -1,4 +1,4 @@
-# Personal Healthcare v8.2 — AI Health Report
+# Personal Healthcare v8.3 — Validation Engine
 
 เวอร์ชันนี้สร้างใหม่ให้ Import เสถียรกว่าเดิม โดยไม่ผูกการ Save กับการตรวจไฟล์ทั้งก้อน
 
@@ -94,5 +94,12 @@ Security:
 - Calls go through a Supabase Edge Function.
 - The browser sends compressed JPEG data to the function.
 - Structured output forces consistent fields for health results.
-  
-Deploy v8.2
+
+
+## v8.3 Validation Engine
+- Compares AI flag with printed reference range.
+- States: validated / review / mismatch / unknown.
+- Mismatch rows are not auto-selected.
+- Save records include confirmation status, validation status, AI confidence, reference range, source and AI flag.
+- Review screen shows extracted / validated / review / confirmed counters.
+- AI extraction and medical interpretation are treated as separate steps.

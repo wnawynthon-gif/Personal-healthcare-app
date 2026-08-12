@@ -25,7 +25,7 @@ function go(view){
     records:["ข้อมูลสุขภาพ","บันทึกและจัดการข้อมูลสุขภาพแบบโครงสร้าง"],
     import:["นำเข้าข้อมูล","Import Center v8.0 — ตรวจและแก้ไขก่อนบันทึก"],
     meds:["ยา & เตือน","ช่วยจัดรายการยาและเวลาเตือน"],
-    ai:["AI วิเคราะห์ผลตรวจ","ถ่ายรูปผลตรวจ → AI วิเคราะห์ → ตรวจยืนยัน → Save"],
+    ai:["AI วิเคราะห์ผลตรวจ","ถ่ายรูปผลตรวจ → AI วิเคราะห์ → Validation → Confirm → Save"],
     files:["Document Inbox","เก็บ PDF และรูปเอกสารสุขภาพ"],
     settings:["ตั้งค่า","การซิงก์และการจัดการข้อมูล"]
   }[view];
@@ -737,3 +737,123 @@ if($("#saveAiResultsBtn"))$("#saveAiResultsBtn").onclick=()=>{
   setTimeout(()=>go("dashboard"),700);
 };
 console.info("Personal Healthcare v8.2 AI Health Report loaded");
+
+
+/* ================= v8.3 Validation Engine ================= */
+function parseReferenceRange(ref){
+  const s=String(ref||"").trim().replace(/[–—]/g,"-");
+  if(!s)return {kind:"unknown"};
+  let m=s.match(/^\s*<\s*([0-9.]+)/); if(m)return {kind:"lt",max:+m[1]};
+  m=s.match(/^\s*>\s*([0-9.]+)/); if(m)return {kind:"gt",min:+m[1]};
+  m=s.match(/^\s*([0-9.]+)\s*-\s*([0-9.]+)/); if(m)return {kind:"range",min:+m[1],max:+m[2]};
+  if(/negative/i.test(s))return {kind:"negative"};
+  if(/positive/i.test(s))return {kind:"positive"};
+  return {kind:"unknown"};
+}
+function numericFromText(v){
+  const m=String(v??"").replace(/,/g,"").match(/-?\d+(?:\.\d+)?/);
+  return m?Number(m[0]):null;
+}
+function validateAiItem(x){
+  const ref=parseReferenceRange(x.reference_range);
+  const flag=String(x.flag||"unknown");
+  const valueText=String(x.value_text??"");
+  const val=numericFromText(valueText);
+  let expected="unknown",reason="ยังไม่มี reference range ที่อ่านได้";
+  if(ref.kind==="range" && val!==null){
+    expected=val<ref.min?"low":val>ref.max?"high":"normal";
+    reason=`เทียบ ${val} กับช่วง ${ref.min}-${ref.max}`;
+  } else if(ref.kind==="lt" && val!==null){
+    expected=val<ref.max?"normal":"high"; reason=`เทียบ ${val} กับเกณฑ์ < ${ref.max}`;
+  } else if(ref.kind==="gt" && val!==null){
+    expected=val>ref.min?"normal":"low"; reason=`เทียบ ${val} กับเกณฑ์ > ${ref.min}`;
+  } else if(ref.kind==="negative"){
+    const neg=/negative|ไม่พบ/i.test(valueText); expected=neg?"normal":"abnormal"; reason=`เทียบผล ${valueText} กับเกณฑ์ Negative`;
+  } else if(ref.kind==="positive"){
+    const pos=/positive|พบ/i.test(valueText); expected=pos?"normal":"abnormal"; reason=`เทียบผล ${valueText} กับเกณฑ์ Positive`;
+  }
+  if(expected==="unknown")return {state:"unknown",expected,reason};
+  const same=(flag===expected)||(flag==="abnormal"&&["high","low","abnormal"].includes(expected));
+  if(same)return {state:"validated",expected,reason};
+  if(flag==="unknown")return {state:"review",expected,reason:`AI ไม่ระบุ flag; ${reason}`};
+  return {state:"mismatch",expected,reason:`AI flag=${flag} แต่จาก reference ควรเป็น ${expected}; ${reason}`};
+}
+function validationLabel(v){
+  return ({validated:"ผ่านอัตโนมัติ",review:"ตรวจเพิ่ม",mismatch:"ไม่ตรง",unknown:"ไม่มีเกณฑ์"})[v.state]||v.state;
+}
+function updateValidationStats(){
+  const rows=$$("#aiResultsBody tr[data-i]");
+  let validated=0,review=0,confirmed=0;
+  rows.forEach(tr=>{
+    const st=tr.dataset.validation;
+    if(st==="validated")validated++; else review++;
+    if($(".air-use",tr)?.checked)confirmed++;
+  });
+  if($("#valExtracted"))$("#valExtracted").textContent=rows.length;
+  if($("#valValidated"))$("#valValidated").textContent=validated;
+  if($("#valNeedsReview"))$("#valNeedsReview").textContent=review;
+  if($("#valConfirmed"))$("#valConfirmed").textContent=confirmed;
+}
+
+renderAiResult = function(){
+  const r=aiResult||{};
+  $("#aiEmptyState").hidden=true;$("#aiAnalysis").hidden=false;$("#aiReviewPanel").hidden=false;
+  $("#aiSummaryTitle").textContent=r.report_title||"ผลตรวจสุขภาพ";
+  $("#aiSummaryText").textContent=r.summary_th||"AI อ่านข้อมูลจากเอกสารแล้ว กรุณาตรวจรายการด้านล่าง";
+  const overall=r.overall_status||"unknown",badge=$("#aiOverallBadge");
+  badge.className=`status-badge ${overall}`;badge.textContent=overallLabel(overall);
+
+  const alerts=Array.isArray(r.alerts)?r.alerts:[];
+  $("#aiAlerts").innerHTML=alerts.length?alerts.map(a=>`<div class="ai-alert ${esc(a.level||"info")}"><strong>${esc(a.title||"สิ่งที่ควรติดตาม")}</strong><small>${esc(a.message_th||"")}</small></div>`).join(""):`<div class="item"><small>ไม่พบคำเตือนเด่นจากข้อมูลที่ AI อ่านได้</small></div>`;
+
+  const rows=Array.isArray(r.results)?r.results:[];
+  $("#aiResultsBody").innerHTML=rows.length?rows.map((x,i)=>{
+    const v=validateAiItem(x);
+    const autoSelect=(Number(x.confidence)>=.55 && v.state!=="mismatch");
+    return `<tr data-i="${i}" data-validation="${v.state}" data-validation-reason="${esc(v.reason)}">
+      <td><input type="checkbox" class="air-use" ${autoSelect?"checked":""}></td>
+      <td><input class="air-name ai-name" value="${esc(x.name||"")}"></td>
+      <td><input class="air-value" value="${esc(x.value_text??x.value??"")}"></td>
+      <td><input class="air-unit" value="${esc(x.unit||"")}"></td>
+      <td><input class="air-ref ai-ref" value="${esc(x.reference_range||"")}"></td>
+      <td><select class="air-flag">${["normal","high","low","abnormal","unknown"].map(f=>`<option value="${f}" ${x.flag===f?"selected":""}>${aiFlagLabel(f)}</option>`).join("")}</select></td>
+      <td><span class="validation-badge ${v.state}" title="${esc(v.reason)}">${validationLabel(v)}</span></td>
+      <td><span class="confidence ${confidenceClass(x.confidence)}">${Math.round((Number(x.confidence)||0)*100)}%</span></td>
+      <td><input class="air-note ai-note" value="${esc(x.note_th||"")}"></td>
+    </tr>`;
+  }).join(""):`<tr><td colspan="9">AI ไม่พบค่าที่เป็นโครงสร้างจากภาพนี้</td></tr>`;
+  $("#aiSaveStatus").textContent=`พบ ${rows.length} รายการ • วันที่เอกสาร: ${r.document_date||"ไม่ทราบ"} • ตรวจเทียบ reference อัตโนมัติแล้ว`;
+  $$("#aiResultsBody input, #aiResultsBody select").forEach(el=>el.onchange=updateValidationStats);
+  updateValidationStats();
+};
+
+if($("#selectAllAiBtn"))$("#selectAllAiBtn").onclick=()=>{$$(".air-use").forEach(x=>x.checked=true);updateValidationStats()};
+if($("#deselectAllAiBtn"))$("#deselectAllAiBtn").onclick=()=>{$$(".air-use").forEach(x=>x.checked=false);updateValidationStats()};
+
+if($("#saveAiResultsBtn"))$("#saveAiResultsBtn").onclick=()=>{
+  if(!aiResult)return;
+  const trs=$$("#aiResultsBody tr[data-i]"),existing=new Set(db.records.map(signature));let saved=0,skipped=0;
+  let docDate=aiResult.document_date?new Date(aiResult.document_date+"T08:00:00"):new Date();
+  if(isNaN(docDate))docDate=new Date();
+  for(const tr of trs){
+    if(!$(".air-use",tr).checked)continue;
+    const i=Number(tr.dataset.i),orig=aiResult.results[i]||{};
+    const name=$(".air-name",tr).value.trim(),value=$(".air-value",tr).value.trim(),unit=$(".air-unit",tr).value.trim(),ref=$(".air-ref",tr).value.trim(),flag=$(".air-flag",tr).value,note=$(".air-note",tr).value.trim();
+    const validation=tr.dataset.validation||"unknown",vreason=tr.dataset.validationReason||"";
+    const confidence=Math.round((Number(orig.confidence)||0)*100);
+    const fullNote=`${name}${ref?` • Reference: ${ref}`:""} • AI flag: ${flag} • Validation: ${validation}${vreason?` (${vreason})`:""} • Confidence: ${confidence}%${note?` • ${note}`:""} • Status: confirmed • Source: AI Health Report v8.3`;
+    const rec=mapAiToRecord(name,value,unit,fullNote,docDate.toISOString());
+    rec.validation_status=validation;
+    rec.confirmation_status="confirmed";
+    rec.ai_confidence=Number(orig.confidence)||0;
+    rec.reference_range=ref;
+    rec.ai_flag=flag;
+    if(validateRec(rec).length||existing.has(signature(rec))){skipped++;continue}
+    db.records.push(rec);existing.add(signature(rec));saved++;
+  }
+  save();
+  $("#aiSaveStatus").textContent=`Confirmed & saved ${saved} รายการ${skipped?` • ข้าม ${skipped}`:""} — Dashboard พร้อมใช้งาน`;
+  updateValidationStats();
+  setTimeout(()=>go("dashboard"),700);
+};
+console.info("Personal Healthcare v8.3 Validation Engine loaded");

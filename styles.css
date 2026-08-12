@@ -53,3 +53,16 @@ dialog{border:0;border-radius:15px;padding:0;box-shadow:0 20px 60px rgba(0,0,0,.
 .confidence{display:inline-block;border-radius:999px;padding:3px 7px;font-size:10px;background:#edf3f1}.confidence.high{color:#087052}.confidence.medium{color:#8a5b0a}.confidence.low{color:#a52c38}
 .ai-progress-wrap{margin-top:12px}.ai-analyze-btn:disabled{opacity:.45;cursor:not-allowed}.ai-save-note{margin-top:12px}
 @media(max-width:900px){.ai-hero-icon{display:none}.ai-photo-grid{grid-template-columns:repeat(2,1fr)}}
+
+/* v8.3 Validation Engine */
+.validation-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
+.vstat{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fbfdfc}
+.vstat span{display:block;color:var(--muted);font-size:11px}
+.vstat b{font-size:22px;margin-top:4px;display:block}
+.validation-badge{display:inline-block;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:750;white-space:nowrap}
+.validation-badge.validated{background:#e6f5ef;color:#087052}
+.validation-badge.review{background:#fff2da;color:#98600b}
+.validation-badge.mismatch{background:#ffe5e7;color:#ad2633}
+.validation-badge.unknown{background:#eef1f0;color:#64746f}
+.ai-results-table{min-width:1120px}
+@media(max-width:900px){.validation-kpis{grid-template-columns:repeat(2,1fr)}}
