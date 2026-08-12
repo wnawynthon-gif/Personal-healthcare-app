@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v8.4</title>
+  <title>Personal Healthcare v8.6</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -13,7 +13,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v8.4 • Vital Signs Update</small></div>
+      <div><strong>Personal Healthcare</strong><small>v8.6 • Medical Insight</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
@@ -44,7 +44,7 @@
 
     <section class="view active" id="view-dashboard">
       <div class="notice info">
-        <strong>v8.4:</strong> อัปเดตข้อมูลสำคัญได้จากหน้า Dashboard โดยตรง: น้ำหนัก • ส่วนสูง • ความดัน • ชีพจร และ “ส่วนสูง” ถูกจัดเป็นข้อมูลสุขภาพ ไม่ใช่ผลแล็บ
+        <strong>v8.6:</strong> Medical Insight — คำนวณ BMI อัตโนมัติ วิเคราะห์ Vital Signs และผลตรวจสุขภาพ พร้อมคำแนะนำอิงแนวทางทางการแพทย์
       </div>
 
       <div class="kpis">
@@ -61,6 +61,9 @@
           <span>ส่วนสูงล่าสุด</span><b id="kpiHeight">—</b><small id="kpiHeightDate">ยังไม่มีข้อมูล</small>
         </article>
         <article class="kpi">
+          <span>BMI ล่าสุด</span><b id="kpiBmi">—</b><small id="kpiBmiStatus">ต้องมีน้ำหนักและส่วนสูง</small>
+        </article>
+        <article class="kpi">
           <span>บันทึกทั้งหมด</span><b id="kpiCount">0</b><small>records</small>
         </article>
       </div>
@@ -68,7 +71,7 @@
       <div class="panel quick-update-panel">
         <div class="panel-head split">
           <div><h3>อัปเดตข้อมูลสุขภาพ</h3><small>กรอกเฉพาะค่าที่ต้องการอัปเดต แล้วกดบันทึกครั้งเดียว</small></div>
-          <span class="v84-badge">v8.4</span>
+          <span class="v84-badge">v8.6</span>
         </div>
         <form id="quickUpdateForm" class="quick-update-grid">
           <label>วันที่/เวลา<input class="input" id="quickDate" type="datetime-local" required></label>
@@ -92,13 +95,23 @@
         </article>
       </div>
 
+      <div class="panel medical-insight-panel">
+        <div class="panel-head split">
+          <div><h3>Medical Insight</h3><small>BMI + Vital Signs + ผลตรวจสุขภาพ • อิงเกณฑ์มาตรฐานเพื่อคัดกรอง ไม่ใช่การวินิจฉัย</small></div>
+          <span class="v84-badge">v8.6</span>
+        </div>
+        <div id="medicalSummary" class="medical-summary"></div>
+        <div id="medicalRecommendations" class="stack"></div>
+        <div class="medical-sources">เกณฑ์อ้างอิงในระบบ: WHO/NHS (BMI), NICE (ความดัน), CDC/ADA (HbA1c/น้ำตาล), NHS/HEART UK (ไขมัน), NKF (eGFR) • ค่าจากห้องแล็บและคำแนะนำแพทย์ของคุณมีความสำคัญเหนือเกณฑ์ทั่วไป</div>
+      </div>
+
       <div class="grid two">
         <article class="panel">
           <div class="panel-head"><div><h3>Health Flags</h3><small>ใช้เพื่อเตือนให้ติดตาม ไม่ใช่การวินิจฉัย</small></div></div>
           <div id="healthFlags" class="stack"></div>
         </article>
         <article class="panel">
-          <div class="panel-head"><div><h3>รายการล่าสุด</h3><small>5 รายการล่าสุด</small></div></div>
+          <div class="panel-head"><div><h3>Health Timeline</h3><small>8 รายการล่าสุด • แก้ไขหรือลบได้ทันที</small></div></div>
           <div id="recentRecords" class="stack"></div>
         </article>
       </div>
@@ -108,7 +121,7 @@
       <div class="panel">
         <div class="panel-head split">
           <div><h3>ข้อมูลสุขภาพ</h3><small>เพิ่ม แก้ไข ลบ และค้นหาได้</small></div>
-          <div class="row"><input id="recordSearch" class="input compact" placeholder="ค้นหา type / note..." /><button class="btn primary" id="addRecordBtn">+ เพิ่มข้อมูล</button></div>
+          <div class="row"><input id="recordSearch" class="input compact" placeholder="ค้นหา type / note..." /><button class="btn ghost" id="cleanupRecordsBtn">จัดระเบียบข้อมูล AI</button><button class="btn primary" id="addRecordBtn">+ เพิ่มข้อมูล</button></div>
         </div>
         <div class="table-wrap">
           <table>
