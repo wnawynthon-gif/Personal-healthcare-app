@@ -1,11 +1,11 @@
 {
-  "name": "Personal Healthcare v6.5",
-  "short_name": "Health v6.5",
+  "name": "Personal Healthcare v8.4",
+  "short_name": "Health v8.4",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f7f7",
   "theme_color": "#0f766e",
-  "description": "Personal healthcare PWA with image/PDF lab import, browser OCR, PDF extraction, health analysis and Supabase sync.",
+  "description": "Personal Healthcare v8.4 with quick vital-sign updates, smart document import, AI validation and Supabase sync.",
   "icons": []
 }

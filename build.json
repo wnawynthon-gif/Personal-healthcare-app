@@ -1,5 +1,5 @@
 {
-  "version": "V7.3",
-  "buildId": "7.3.0-20260810",
-  "ocrEngine": "V7.3 Numeric Result Recognition Engine"
+  "version": "V8.4",
+  "buildId": "8.4.0-20260812",
+  "ocrEngine": "V8.4 Vital Signs + Validation Engine"
 }

@@ -9,9 +9,9 @@ function save(){localStorage.setItem(KEY,JSON.stringify(db));renderAll();syncBad
 function uid(){return crypto?.randomUUID?.() || "id-"+Date.now()+"-"+Math.random().toString(16).slice(2)}
 function esc(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m]))}
 function fmtDate(v){if(!v)return "—";const d=new Date(v);return isNaN(d)?String(v):d.toLocaleString("th-TH",{year:"2-digit",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}
-function typeLabel(t){return ({weight:"น้ำหนัก",blood_pressure:"ความดัน",pulse:"ชีพจร",glucose:"น้ำตาล",lab:"ผลแล็บ",exercise:"ออกกำลังกาย",note:"บันทึก"})[t]||t||"—"}
+function typeLabel(t){return ({weight:"น้ำหนัก",height:"ส่วนสูง",blood_pressure:"ความดัน",pulse:"ชีพจร",glucose:"น้ำตาล",lab:"ผลแล็บ",exercise:"ออกกำลังกาย",note:"บันทึก"})[t]||t||"—"}
 function recordVal(r){if(r.type==="blood_pressure")return `${r.value??"—"}/${r.value2??"—"}`; return r.value??"—"}
-function guessUnit(type){return ({weight:"kg",blood_pressure:"mmHg",pulse:"bpm",glucose:"mg/dL"})[type]||""}
+function guessUnit(type){return ({weight:"kg",height:"cm",blood_pressure:"mmHg",pulse:"bpm",glucose:"mg/dL"})[type]||""}
 
 function syncBadge(){const cfg=getCfg();$("#storageBadge").textContent=cfg.url&&cfg.key?"Local + Supabase ready":"Local mode"}
 function getCfg(){try{return JSON.parse(localStorage.getItem(CFG)||"{}")}catch{return {}}}
@@ -36,13 +36,15 @@ $$("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
 
 function latest(type){return db.records.filter(r=>r.type===type).sort((a,b)=>new Date(b.date)-new Date(a.date))[0]}
 function renderDashboard(){
-  const w=latest("weight"),bp=latest("blood_pressure"),p=latest("pulse");
+  const w=latest("weight"),h=latest("height"),bp=latest("blood_pressure"),p=latest("pulse");
   $("#kpiWeight").textContent=w?`${w.value} ${w.unit||"kg"}`:"—";
   $("#kpiWeightDate").textContent=w?fmtDate(w.date):"ยังไม่มีข้อมูล";
   $("#kpiBp").textContent=bp?`${bp.value}/${bp.value2}`:"—";
   $("#kpiBpStatus").textContent=bp?bpAssessment(bp).label:"ยังไม่มีข้อมูล";
   $("#kpiPulse").textContent=p?`${p.value} ${p.unit||"bpm"}`:"—";
   $("#kpiPulseDate").textContent=p?fmtDate(p.date):"ยังไม่มีข้อมูล";
+  $("#kpiHeight").textContent=h?`${h.value} ${h.unit||"cm"}`:"—";
+  $("#kpiHeightDate").textContent=h?fmtDate(h.date):"ยังไม่มีข้อมูล";
   $("#kpiCount").textContent=db.records.length;
   renderWeightChart(); renderBpChart(); renderFlags(); renderRecent();
 }
@@ -113,7 +115,7 @@ function openRecord(id){
   $("#recordDialog").showModal();
 }
 function toLocalInput(v){const d=new Date(v);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)}
-$("#recordType").onchange=()=>{if(!$("#recordUnit").value)$("#recordUnit").value=guessUnit($("#recordType").value)}
+$("#recordType").onchange=()=>{$("#recordUnit").value=guessUnit($("#recordType").value)||$("#recordUnit").value}
 $("#recordForm").onsubmit=e=>{
   e.preventDefault();
   const id=$("#recordId").value||uid(), old=db.records.find(r=>r.id===id);
@@ -121,6 +123,29 @@ $("#recordForm").onsubmit=e=>{
   if(old)db.records=db.records.map(r=>r.id===id?rec:r); else db.records.push(rec);
   save();$("#recordDialog").close();
 }
+function setQuickDate(){
+  const el=$("#quickDate"); if(!el)return;
+  const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());el.value=d.toISOString().slice(0,16);
+}
+setQuickDate();
+if($("#quickUpdateForm"))$("#quickUpdateForm").onsubmit=e=>{
+  e.preventDefault();
+  const date=new Date($("#quickDate").value);
+  if(isNaN(date)){ $("#quickUpdateStatus").textContent="วันที่/เวลาไม่ถูกต้อง"; return; }
+  const vals={weight:$("#quickWeight").value,height:$("#quickHeight").value,pulse:$("#quickPulse").value};
+  const sys=$("#quickSys").value,dia=$("#quickDia").value;
+  if((sys&&!dia)||(!sys&&dia)){ $("#quickUpdateStatus").textContent="ความดันต้องกรอกทั้ง SYS และ DIA"; return; }
+  const now=new Date().toISOString(), add=(type,value,value2=null)=>db.records.push({id:uid(),date:date.toISOString(),type,value:Number(value),value2:value2===null?null:Number(value2),unit:guessUnit(type),note:"อัปเดตจาก Dashboard v8.4",created_at:now,updated_at:now});
+  let count=0;
+  for(const [type,value] of Object.entries(vals)){if(value!==""){add(type,value);count++;}}
+  if(sys&&dia){add("blood_pressure",sys,dia);count++;}
+  if(!count){ $("#quickUpdateStatus").textContent="กรอกอย่างน้อย 1 ค่าเพื่อบันทึก"; return; }
+  save();
+  ["#quickWeight","#quickHeight","#quickSys","#quickDia","#quickPulse"].forEach(id=>$(id).value="");
+  setQuickDate();
+  $("#quickUpdateStatus").textContent=`บันทึกแล้ว ${count} รายการ`;
+};
+
 function numOrText(v){if(v==="")return null;const n=Number(v);return Number.isFinite(n)?n:v}
 
 function parseCSV(text){
@@ -170,6 +195,7 @@ function normalizeType(v){
   const s=String(v||"").trim().toLowerCase().replace(/\s+/g,"_");
   if(["bp","bloodpressure","blood_pressure","ความดัน","ความดันโลหิต"].includes(s))return "blood_pressure";
   if(["weight","น้ำหนัก"].includes(s))return "weight";
+  if(["height","ส่วนสูง","ความสูง","stature"].includes(s))return "height";
   if(["pulse","heart_rate","heartrate","ชีพจร"].includes(s))return "pulse";
   if(["glucose","blood_sugar","น้ำตาล"].includes(s))return "glucose";
   if(["exercise","ออกกำลังกาย"].includes(s))return "exercise";
@@ -192,7 +218,7 @@ function validateRec(r){
   const errors=[];
   if(!r.date)errors.push("วันที่ไม่ถูกต้อง");
   if(!r.type)errors.push("ไม่มีประเภท");
-  if(["weight","blood_pressure","pulse","glucose"].includes(r.type)&&!Number.isFinite(Number(r.value)))errors.push("ค่า 1 ไม่ใช่ตัวเลข");
+  if(["weight","height","blood_pressure","pulse","glucose"].includes(r.type)&&!Number.isFinite(Number(r.value)))errors.push("ค่า 1 ไม่ใช่ตัวเลข");
   if(r.type==="blood_pressure"&&!Number.isFinite(Number(r.value2)))errors.push("ความดันต้องมีค่า 2");
   return errors;
 }
@@ -276,7 +302,7 @@ async function handleFiles(files){
 }
 $("#pasteImportBtn").onclick=()=>$("#pasteDialog").showModal();
 $("#pasteForm").onsubmit=e=>{e.preventDefault();setImportData(parseCSV($("#pasteText").value),"pasted.csv");$("#pasteDialog").close()};
-$("#downloadTemplate").onclick=()=>downloadText("health-import-template.csv","date,type,value,value2,unit,note\n2026-08-11T08:00:00,blood_pressure,128,82,mmHg,morning\n2026-08-11T08:05:00,weight,80,,kg,\n");
+$("#downloadTemplate").onclick=()=>downloadText("health-import-template.csv","date,type,value,value2,unit,note\n2026-08-11T08:00:00,blood_pressure,128,82,mmHg,morning\n2026-08-11T08:05:00,weight,80,,kg,\n2026-08-11T08:06:00,height,170,,cm,\n");
 function downloadText(name,text,type="text/plain"){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 
 function renderMeds(){
@@ -498,6 +524,9 @@ function parseHealthText(text,doc){
   // Weight
   const wrx=/(?:weight|น้ำหนัก)[^\d]{0,20}(\d{2,3}(?:\.\d+)?)\s*(kg|kgs|kilograms?)?/ig;
   while((m=wrx.exec(norm))){const v=+m[1];if(v>=25&&v<=300)add(mkDetected("weight",v,null,"kg","อ่านจาก "+(doc?.name||"เอกสาร"),date))}
+  // Height — first-class health metric in v8.4, never a lab result
+  const hrx=/(?:height|stature|ส่วนสูง|ความสูง)[^\d]{0,20}(\d{2,3}(?:\.\d+)?)\s*(cm|centimeters?|ซม\.?|เซนติเมตร)?/ig;
+  while((m=hrx.exec(norm))){const v=+m[1];if(v>=80&&v<=250)add(mkDetected("height",v,null,"cm","อ่านจาก "+(doc?.name||"เอกสาร"),date))}
   // Pulse / heart rate
   const prx=/(?:pulse|heart\s*rate|hr|ชีพจร)[^\d]{0,20}(\d{2,3})\s*(?:bpm)?/ig;
   while((m=prx.exec(norm))){const v=+m[1];if(v>=30&&v<=220)add(mkDetected("pulse",v,null,"bpm","อ่านจาก "+(doc?.name||"เอกสาร"),date))}
@@ -526,7 +555,7 @@ function renderDetectedRows(){
   body.innerHTML=detectedRows.map((r,i)=>`<tr data-i="${i}">
     <td><input type="checkbox" class="d-use" ${r.selected?"checked":""}></td>
     <td><select class="d-type">
-      ${["blood_pressure","weight","pulse","glucose","lab","exercise","note"].map(t=>`<option value="${t}" ${r.type===t?"selected":""}>${typeLabel(t)}</option>`).join("")}
+      ${["blood_pressure","weight","height","pulse","glucose","lab","exercise","note"].map(t=>`<option value="${t}" ${r.type===t?"selected":""}>${typeLabel(t)}</option>`).join("")}
     </select></td>
     <td><input class="d-date date-input" type="datetime-local" value="${toLocalInput(r.date)}"></td>
     <td><input class="d-v1" type="number" step="any" value="${esc(r.value)}"></td>
@@ -711,6 +740,7 @@ function mapAiToRecord(name,valueText,unit,note,date){
   const n=String(name||"").toLowerCase();
   let type="lab", value=numOrText(String(valueText).replace(/,/g,"").match(/-?\d+(?:\.\d+)?/)?.[0]||valueText), value2=null;
   if(/weight|น้ำหนัก/.test(n))type="weight";
+  else if(/height|stature|ส่วนสูง|ความสูง/.test(n))type="height";
   else if(/pulse|heart rate|ชีพจร/.test(n))type="pulse";
   else if(/glucose|blood sugar|น้ำตาล/.test(n))type="glucose";
   else if(/blood pressure|ความดัน/.test(n)){
@@ -841,7 +871,7 @@ if($("#saveAiResultsBtn"))$("#saveAiResultsBtn").onclick=()=>{
     const name=$(".air-name",tr).value.trim(),value=$(".air-value",tr).value.trim(),unit=$(".air-unit",tr).value.trim(),ref=$(".air-ref",tr).value.trim(),flag=$(".air-flag",tr).value,note=$(".air-note",tr).value.trim();
     const validation=tr.dataset.validation||"unknown",vreason=tr.dataset.validationReason||"";
     const confidence=Math.round((Number(orig.confidence)||0)*100);
-    const fullNote=`${name}${ref?` • Reference: ${ref}`:""} • AI flag: ${flag} • Validation: ${validation}${vreason?` (${vreason})`:""} • Confidence: ${confidence}%${note?` • ${note}`:""} • Status: confirmed • Source: AI Health Report v8.3`;
+    const fullNote=`${name}${ref?` • Reference: ${ref}`:""} • AI flag: ${flag} • Validation: ${validation}${vreason?` (${vreason})`:""} • Confidence: ${confidence}%${note?` • ${note}`:""} • Status: confirmed • Source: AI Health Report v8.4`;
     const rec=mapAiToRecord(name,value,unit,fullNote,docDate.toISOString());
     rec.validation_status=validation;
     rec.confirmation_status="confirmed";
@@ -856,4 +886,4 @@ if($("#saveAiResultsBtn"))$("#saveAiResultsBtn").onclick=()=>{
   updateValidationStats();
   setTimeout(()=>go("dashboard"),700);
 };
-console.info("Personal Healthcare v8.3 Validation Engine loaded");
+console.info("Personal Healthcare v8.4 Vital Signs Update loaded");
