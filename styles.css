@@ -91,9 +91,10 @@ dialog{border:0;border-radius:15px;padding:0;box-shadow:0 20px 60px rgba(0,0,0,.
 @media(max-width:620px){.wm-kpis{grid-template-columns:1fr 1fr}}
 
 /* v9.1.2 iPad display hotfix */
-.v90-guidance-grid{grid-template-columns:1fr}
+.grid.two.v90-guidance-grid{grid-template-columns:minmax(0,1fr)}
 .personalised-guidance-panel{min-width:0}
-.guidance-columns{grid-template-columns:repeat(3,minmax(220px,1fr))}
+.personalised-guidance-panel,.v90-guidance-grid>article{width:100%}
+.guidance-columns{grid-template-columns:repeat(3,minmax(0,1fr));width:100%}
 .guidance-col,.guidance-item{min-width:0}
 .guidance-item strong,.guidance-item small,.guidance-item span{overflow-wrap:anywhere;word-break:normal}
 @media(max-width:900px){.guidance-columns{grid-template-columns:1fr}}
