@@ -103,3 +103,11 @@ Security:
 - Save records include confirmation status, validation status, AI confidence, reference range, source and AI flag.
 - Review screen shows extracted / validated / review / confirmed counters.
 - AI extraction and medical interpretation are treated as separate steps.
+
+
+## v9.0 — Personalised Do / Limit / Avoid
+- เพิ่มคำแนะนำ ควรทำ / ควรลด / ควรหลีกเลี่ยง โดยอิง BMI, BP, glucose/HbA1c, lipids และ uric acid
+- ทุกคำแนะนำแสดงเหตุผลจากข้อมูลที่เกี่ยวข้อง
+- Medication Safety rule เบื้องต้น: simvastatin, amlodipine, allopurinol
+- ไม่สั่งหยุดยาเอง และไม่สร้างข้อห้ามอาหารแบบเด็ดขาดเมื่อข้อมูลไม่เพียงพอ
+- เพิ่ม Health Goals และ Monitoring Plan ต่อเนื่องจาก Risk & Action Plan

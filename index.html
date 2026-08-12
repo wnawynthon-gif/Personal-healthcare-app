@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v8.8</title>
+  <title>Personal Healthcare v9.0</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -13,7 +13,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v8.8 • Risk & Action Plan</small></div>
+      <div><strong>Personal Healthcare</strong><small>v9.0 • Personalised Guidance</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
@@ -44,7 +44,7 @@
 
     <section class="view active" id="view-dashboard">
       <div class="notice info">
-        <strong>v8.8:</strong> Health Risk & Action Plan — จัดลำดับความเสี่ยงที่สำคัญ เชื่อม BMI + ความดัน + น้ำตาล + ไขมัน + ไต และเปรียบเทียบข้อมูลย้อนหลังเพื่อวางแผนติดตาม
+        <strong>v9.0:</strong> Personalised Do / Limit / Avoid — เปลี่ยนผลวิเคราะห์เป็นคำแนะนำที่ทำได้จริง โดยอ้างอิงข้อมูลล่าสุด ผลแล็บ และรายการยา พร้อมบอกเหตุผลของทุกข้อ
       </div>
 
       <div class="kpis">
@@ -71,7 +71,7 @@
       <div class="panel quick-update-panel">
         <div class="panel-head split">
           <div><h3>อัปเดตข้อมูลสุขภาพ</h3><small>กรอกเฉพาะค่าที่ต้องการอัปเดต แล้วกดบันทึกครั้งเดียว</small></div>
-          <span class="v84-badge">v8.8</span>
+          <span class="v84-badge">v9.0</span>
         </div>
         <form id="quickUpdateForm" class="quick-update-grid">
           <label>วันที่/เวลา<input class="input" id="quickDate" type="datetime-local" required></label>
@@ -98,22 +98,45 @@
       <div class="panel medical-insight-panel">
         <div class="panel-head split">
           <div><h3>Medical Analysis Engine</h3><small>BMI + Vital Signs + ผลตรวจสุขภาพ + Data Quality • จัดลำดับ ปกติ / ควรติดตาม / ควรปรึกษาแพทย์ / เร่งด่วน</small></div>
-          <span class="v84-badge">v8.8</span>
+          <span class="v84-badge">v9.0</span>
         </div>
         <div id="medicalSummary" class="medical-summary"></div>
         <div id="medicalRecommendations" class="stack"></div>
-        <div class="medical-sources">เกณฑ์อ้างอิงหลักในระบบ: WHO (BMI), NICE (ความดัน), CDC (HbA1c/น้ำตาล), NHS (ไขมัน), NKF (eGFR) • v8.8 เชื่อมข้อมูลหลายระบบเพื่อจัดลำดับการติดตาม แต่ไม่คำนวณคะแนนโรคหัวใจแบบตัวเลขหากยังไม่มีอายุ เพศ ประวัติสูบบุหรี่/เบาหวาน และข้อมูลที่จำเป็น • ไม่ใช้แทนการวินิจฉัย</div>
+        <div class="medical-sources">เกณฑ์อ้างอิงหลักในระบบ: WHO (BMI), NICE (ความดัน), CDC (HbA1c/น้ำตาล), NHS (ไขมัน), NKF (eGFR) • v9.0 เพิ่มคำแนะนำ Do / Limit / Avoid จากข้อมูลที่มี โดยหลีกเลี่ยงคำว่า “ห้าม” เว้นแต่มีข้อห้ามชัดเจนจากยา/ภาวะเฉพาะ • ไม่ใช้แทนการวินิจฉัยหรือคำสั่งรักษา</div>
       </div>
 
       <div class="grid two v88-risk-grid">
         <article class="panel">
-          <div class="panel-head split"><div><h3>Health Risk & Action Plan</h3><small>สรุปความเสี่ยงเป็นกลุ่ม และแนะนำสิ่งที่ควรทำต่อโดยไม่ใช้คะแนนตัวเลขเกินข้อมูลที่มี</small></div><span class="v84-badge">v8.8</span></div>
+          <div class="panel-head split"><div><h3>Health Risk & Action Plan</h3><small>สรุปความเสี่ยงเป็นกลุ่ม และแนะนำสิ่งที่ควรทำต่อโดยไม่ใช้คะแนนตัวเลขเกินข้อมูลที่มี</small></div><span class="v84-badge">v9.0</span></div>
           <div id="riskOverview" class="risk-overview"></div>
           <div id="actionPlan" class="stack"></div>
         </article>
         <article class="panel">
           <div class="panel-head"><div><h3>Historical Comparison</h3><small>เปรียบเทียบค่าปัจจุบันกับข้อมูลก่อนหน้าเมื่อวันที่น่าเชื่อถือ</small></div></div>
           <div id="historicalComparison" class="stack"></div>
+        </article>
+      </div>
+
+      <div class="grid two v90-guidance-grid">
+        <article class="panel personalised-guidance-panel">
+          <div class="panel-head split"><div><h3>Personalised Do / Limit / Avoid</h3><small>คำแนะนำตามข้อมูลสุขภาพล่าสุด พร้อมเหตุผลว่ามาจากค่าใด</small></div><span class="v84-badge">v9.0</span></div>
+          <div id="personalGuidance" class="guidance-columns"></div>
+          <div class="medical-sources">คำแนะนำด้านพฤติกรรมอ้างอิงแนวทาง NICE / NHS / CDC และปรับตามข้อมูลที่มีในแอป • หากมีโรคประจำตัว ตั้งครรภ์ โรคไต/ตับ หรือข้อจำกัดอาหาร ควรให้บุคลากรสุขภาพปรับแผนเฉพาะบุคคล</div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><div><h3>Medication Safety</h3><small>ตรวจคำเตือนอาหาร/เครื่องดื่มจากรายการยาที่บันทึกไว้ โดยไม่สั่งหยุดยาเอง</small></div></div>
+          <div id="medicationSafety" class="stack"></div>
+        </article>
+      </div>
+
+      <div class="grid two v90-goal-grid">
+        <article class="panel">
+          <div class="panel-head"><div><h3>Health Goals</h3><small>เป้าหมายเบื้องต้นจากข้อมูลปัจจุบัน — ไม่ใช่เป้าหมายการรักษาเฉพาะบุคคล</small></div></div>
+          <div id="healthGoals" class="stack"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><div><h3>Monitoring Plan</h3><small>สิ่งที่ควรบันทึกหรือทบทวนต่อ เพื่อให้การวิเคราะห์ครั้งถัดไปแม่นขึ้น</small></div></div>
+          <div id="monitoringPlan" class="stack"></div>
         </article>
       </div>
 

@@ -234,7 +234,7 @@ if($("#quickUpdateForm"))$("#quickUpdateForm").onsubmit=e=>{
   const vals={weight:$("#quickWeight").value,height:$("#quickHeight").value,pulse:$("#quickPulse").value};
   const sys=$("#quickSys").value,dia=$("#quickDia").value;
   if((sys&&!dia)||(!sys&&dia)){ $("#quickUpdateStatus").textContent="ความดันต้องกรอกทั้ง SYS และ DIA"; return; }
-  const now=new Date().toISOString(), add=(type,value,value2=null)=>db.records.push({id:uid(),date:date.toISOString(),type,value:Number(value),value2:value2===null?null:Number(value2),unit:guessUnit(type),note:"อัปเดตจาก Dashboard v8.8",created_at:now,updated_at:now});
+  const now=new Date().toISOString(), add=(type,value,value2=null)=>db.records.push({id:uid(),date:date.toISOString(),type,value:Number(value),value2:value2===null?null:Number(value2),unit:guessUnit(type),note:"อัปเดตจาก Dashboard v9.0",created_at:now,updated_at:now});
   let count=0;
   for(const [type,value] of Object.entries(vals)){if(value!==""){add(type,value);count++;}}
   if(sys&&dia){add("blood_pressure",sys,dia);count++;}
@@ -970,7 +970,7 @@ if($("#saveAiResultsBtn"))$("#saveAiResultsBtn").onclick=()=>{
     const name=$(".air-name",tr).value.trim(),value=$(".air-value",tr).value.trim(),unit=$(".air-unit",tr).value.trim(),ref=$(".air-ref",tr).value.trim(),flag=$(".air-flag",tr).value,note=$(".air-note",tr).value.trim();
     const validation=tr.dataset.validation||"unknown",vreason=tr.dataset.validationReason||"";
     const confidence=Math.round((Number(orig.confidence)||0)*100);
-    const fullNote=`${name}${ref?` • Reference: ${ref}`:""} • AI flag: ${flag} • Validation: ${validation}${vreason?` (${vreason})`:""} • Confidence: ${confidence}%${note?` • ${note}`:""} • Status: confirmed • Source: AI Health Report v8.8`;
+    const fullNote=`${name}${ref?` • Reference: ${ref}`:""} • AI flag: ${flag} • Validation: ${validation}${vreason?` (${vreason})`:""} • Confidence: ${confidence}%${note?` • ${note}`:""} • Status: confirmed • Source: AI Health Report v9.0`;
     const rec=mapAiToRecord(name,value,unit,fullNote,docDate.toISOString());
     rec.validation_status=validation;
     rec.confirmation_status="confirmed";
@@ -987,7 +987,7 @@ if($("#saveAiResultsBtn"))$("#saveAiResultsBtn").onclick=()=>{
 };
 console.info("Personal Healthcare v8.6 Medical Insight loaded");
 
-/* ================= v8.8 Medical Analysis Engine ================= */
+/* ================= v9.0 Medical Analysis Engine ================= */
 const V87_MIGRATION_KEY="ph_v87_migrated";
 function daysBetween(a,b){const x=new Date(a),y=new Date(b);if(isNaN(x)||isNaN(y))return null;return Math.abs(y-x)/86400000}
 function dateOnly(v){if(!v)return "—";const d=new Date(v);return isNaN(d)?String(v):d.toLocaleDateString("th-TH",{year:"2-digit",month:"short",day:"numeric"})}
@@ -1004,7 +1004,7 @@ function migrateLegacyHealthRecords(opts={silent:true}){
   db.records=db.records.map(r=>{
     let x=r;
     if(isLegacyHeightLab(x)){
-      x={...x,original_type:x.original_type||"lab",type:"height",unit:x.unit||"cm",raw_note:x.raw_note||x.note,note:"นำเข้าจากผลตรวจเดิม • จัดประเภทเป็นส่วนสูงโดย v8.8",updated_at:new Date().toISOString(),migration_v87:true};
+      x={...x,original_type:x.original_type||"lab",type:"height",unit:x.unit||"cm",raw_note:x.raw_note||x.note,note:"นำเข้าจากผลตรวจเดิม • จัดประเภทเป็นส่วนสูงโดย v9.0",updated_at:new Date().toISOString(),migration_v87:true};
       migrated++;
     }
     if(isVital(x.type)){
@@ -1089,16 +1089,16 @@ function renderFlags(){
 function compactNote(r){
   const note=String(r?.note||"").trim();if(!note)return "";
   if(!isVital(r?.type))return note.length>130?note.slice(0,127)+"…":note;
-  if(/^อัปเดตจาก Dashboard v8\.[0-9]+/i.test(note))return note.replace(/v8\.[0-9]+/i,"v8.8");
+  if(/^อัปเดตจาก Dashboard v8\.[0-9]+/i.test(note))return note.replace(/v8\.[0-9]+/i,"v9.0");
   if(/Reference:|AI flag:|Validation:|Confidence:|Status:|Source:/i.test(note)){const src=(note.match(/Source:\s*([^•]+)/i)||[])[1]?.trim();return src?`นำเข้าจาก AI • ${src}`:"นำเข้าจาก AI"}
   return note.length>90?note.slice(0,87)+"…":note;
 }
 if($("#cleanupRecordsBtn"))$("#cleanupRecordsBtn").onclick=()=>{const r=migrateLegacyHealthRecords({silent:false});renderAll()};
 if(!localStorage.getItem(V87_MIGRATION_KEY))migrateLegacyHealthRecords({silent:true});
 renderAll();
-console.info("Personal Healthcare v8.8 Medical Analysis Engine loaded");
+console.info("Personal Healthcare v9.0 Medical Analysis Engine loaded");
 
-/* ================= v8.8 Health Risk & Action Plan ================= */
+/* ================= v9.0 Health Risk & Action Plan ================= */
 function severityMax(levels){const rank={ok:0,watch:1,consult:2,urgent:3};return levels.reduce((best,x)=>(rank[x]>rank[best]?x:best),'ok')}
 function v88RiskGroups(){
   const bmi=bmiAssessment(),bp=latest('blood_pressure');
@@ -1166,4 +1166,91 @@ function renderFlags(){
 }
 const _v88RenderMedicalInsight=renderMedicalInsight;
 renderMedicalInsight=function(){_v88RenderMedicalInsight();renderRiskActionPlan()};
-console.info('Personal Healthcare v8.8 Health Risk & Action Plan loaded');
+console.info('Personal Healthcare v9.0 Health Risk & Action Plan loaded');
+
+/* ================= v9.0 Personalised Do / Limit / Avoid ================= */
+function latestUric(){return latestAnyLab(["uricacid","กรดยูริก","uric"])}
+function isAbnormalByReference(r){if(!r)return false;const ra=referenceAssessment(r);if(ra)return ra.status!=="normal";return ["high","low","abnormal","critical"].includes(String(r.ai_flag||"").toLowerCase())}
+function currentMetabolicSignals(){
+  const bmi=bmiAssessment(),bp=latest("blood_pressure");
+  const fpg=latestAnyLab(["fastingglucose","fastingbloodsugar","fbs","glucosefasting","น้ำตาลอดอาหาร"]);
+  const hba=latestAnyLab(["hba1c","a1c","เอวันซี","ฮีโมโกลบินเอวันซี"]);
+  const ldl=latestAnyLab(["ldl"]),tc=latestAnyLab(["totalcholesterol","cholesteroltotal","cholesterol","คอเลสเตอรอลรวม"]),tg=latestAnyLab(["triglycer","ไตรกลีเซอไรด์"]),uric=latestUric();
+  return {bmi,bp,fpg,hba,ldl,tc,tg,uric,mg:glucoseMgDl(fpg),ldlv:mmolLipid(ldl),tcv:mmolLipid(tc),tgv:mmolLipid(tg)};
+}
+function personalGuidanceItems(){
+  const s=currentMetabolicSignals(),doItems=[],limitItems=[],avoidItems=[];
+  const addUnique=(arr,item)=>{if(!arr.some(x=>x.title===item.title))arr.push(item)};
+
+  if(s.bmi&&s.bmi.bmi>=25){
+    addUnique(doItems,{title:"ลดน้ำหนักแบบค่อยเป็นค่อยไป",reason:`BMI ปัจจุบัน ${s.bmi.bmi.toFixed(1)} (${s.bmi.label})`,text:"เน้นอาหารที่ทำต่อเนื่องได้ การนอน และกิจกรรมที่เหมาะกับข้อจำกัดร่างกาย มากกว่าการลดเร็วหรืออดอาหารรุนแรง"});
+  }
+  if((s.mg!=null&&s.mg>=100)||(s.hba&&Number(s.hba.value)>=5.7)){
+    addUnique(doItems,{title:"เพิ่มกิจกรรมทางกายสม่ำเสมอ",reason:`${s.mg!=null?`Fasting glucose ≈ ${Math.round(s.mg)} mg/dL`:""}${s.hba?`${s.mg!=null?" • ":""}HbA1c ${s.hba.value}%`:""}`,text:"หากทำได้และไม่มีข้อห้าม ตั้งเป้ากิจกรรมระดับปานกลางรวมประมาณ 150 นาที/สัปดาห์ และปรับให้เหมาะกับเข่า/ข้อ/โรคร่วม"});
+    if(s.bmi&&s.bmi.bmi>=25)addUnique(doItems,{title:"ตั้งเป้าลดน้ำหนักระยะแรก 5–7%",reason:"มีสัญญาณน้ำตาลช่วงก่อนเบาหวานร่วมกับน้ำหนักเกิน",text:`จากน้ำหนักล่าสุด ${s.bmi.kg.toFixed(1)} kg คิดเป็นประมาณ ${(s.bmi.kg*.05).toFixed(1)}–${(s.bmi.kg*.07).toFixed(1)} kg โดยควรทำแบบค่อยเป็นค่อยไป`});
+    addUnique(limitItems,{title:"ลดเครื่องดื่มหวานและน้ำตาลเติมเพิ่ม",reason:"น้ำตาลอดอาหาร/HbA1c สูงกว่าช่วงปกติ",text:"เลือกน้ำเปล่า เครื่องดื่มไม่หวาน และลดขนม/เครื่องดื่มที่มีน้ำตาลสูง"});
+  }
+  if(s.bp&&bpAssessment(s.bp).level==="warn"){
+    addUnique(doItems,{title:"วัดความดันที่บ้านอย่างเป็นระบบ",reason:`BP ล่าสุด ${s.bp.value}/${s.bp.value2} mmHg`,text:"วัดเช้าและเย็น ครั้งละ 2 ค่า ห่างกันอย่างน้อย 1 นาที หลายวัน แล้วดูค่าเฉลี่ยแทนการตัดสินจากครั้งเดียว"});
+    addUnique(limitItems,{title:"ลดเกลือและอาหารเค็มจัด",reason:`ความดันล่าสุด ${s.bp.value}/${s.bp.value2} mmHg`,text:"ลดอาหารแปรรูป ซุป/น้ำแกงเค็ม น้ำปลา ซีอิ๊ว และการเติมเกลือเพิ่ม โดยไม่ใช้เกลือโพแทสเซียมแทนเองหากมีโรคไตหรือใช้ยาบางชนิด"});
+    addUnique(limitItems,{title:"ลดแอลกอฮอล์ โดยเฉพาะถ้าดื่มมาก",reason:"ความดันสูงกว่าช่วงที่ควรติดตาม",text:"การลดการดื่มมากเกินไปช่วยลดความดันและมีประโยชน์ต่อสุขภาพด้านอื่น"});
+  }
+  if((s.ldlv!=null&&s.ldlv>=3)||(s.tcv!=null&&s.tcv>=5)){
+    addUnique(doItems,{title:"เปลี่ยนไขมันอิ่มตัวเป็นไขมันไม่อิ่มตัว",reason:`${s.ldl?`LDL ${s.ldl.value} ${s.ldl.unit||""}`:""}${s.tc?`${s.ldl?" • ":""}Cholesterol ${s.tc.value} ${s.tc.unit||""}`:""}`,text:"เลือกปลา ถั่ว เมล็ดพืช และน้ำมันพืชที่เหมาะสม พร้อมเพิ่มผัก ผลไม้ และอาหารใยอาหารสูง"});
+    addUnique(limitItems,{title:"ลดอาหารไขมันอิ่มตัว",reason:"LDL/Cholesterol สูงกว่าช่วงทั่วไป",text:"ลดเนื้อติดมัน ไส้กรอก เนย กี ชีส ครีม เค้ก/บิสกิต และอาหารที่มีไขมันอิ่มตัวสูง"});
+  }
+  if(s.tgv!=null&&s.tgv>=1.7){
+    addUnique(limitItems,{title:"ลดแอลกอฮอล์และเครื่องดื่มหวาน",reason:`Triglycerides ${s.tg.value} ${s.tg.unit||""}`,text:"แอลกอฮอล์และน้ำตาลส่วนเกินอาจทำให้ triglycerides สูงขึ้น ควรลดโดยเฉพาะเมื่อค่าผิดปกติ"});
+  }
+  if(s.uric&&isAbnormalByReference(s.uric)){
+    addUnique(doItems,{title:"ดื่มน้ำให้เพียงพอ",reason:`กรดยูริก ${s.uric.value} ${s.uric.unit||""} สูงตามรายงาน/ช่วงอ้างอิง`,text:"หากแพทย์ไม่ได้จำกัดน้ำจากโรคหัวใจหรือไต การรักษาภาวะขาดน้ำให้น้อยลงเป็นส่วนหนึ่งของการดูแลความเสี่ยงเกาต์"});
+    addUnique(limitItems,{title:"ลดเครื่องใน เนื้อแดงบางชนิด และอาหารทะเลปริมาณมาก",reason:"กรดยูริกสูง",text:"ไม่จำเป็นต้องงดอาหารทุกชนิดที่มีพิวรีน แต่ควรลดแหล่งที่มีพิวรีนสูงและดูอาการร่วม"});
+    addUnique(avoidItems,{title:"หลีกเลี่ยงการดื่มหนัก/ดื่มรวดเดียว",reason:"กรดยูริกสูง",text:"โดยเฉพาะเบียร์และสุรา ซึ่งสัมพันธ์กับความเสี่ยงเกาต์เพิ่มขึ้น; หากมีเกาต์กำเริบควรงดแอลกอฮอล์และขอคำแนะนำการรักษา"});
+  }
+  if(!doItems.length)addUnique(doItems,{title:"บันทึกข้อมูลสม่ำเสมอ",reason:"ยังไม่มีสัญญาณเฉพาะที่ต้องปรับแผน",text:"เก็บน้ำหนัก ความดัน และผลตรวจตามรอบ เพื่อให้คำแนะนำครั้งต่อไปเฉพาะบุคคลมากขึ้น"});
+  if(!limitItems.length)addUnique(limitItems,{title:"ยังไม่มีรายการเฉพาะที่ต้องลด",reason:"ข้อมูลปัจจุบันไม่ชี้ข้อจำกัดเฉพาะ",text:"คงหลักอาหารสมดุลและหลีกเลี่ยงการเปลี่ยนอาหารแบบสุดโต่งโดยไม่จำเป็น"});
+  if(!avoidItems.length)addUnique(avoidItems,{title:"ยังไม่มีข้อห้ามอาหารแบบเด็ดขาดจากข้อมูลนี้",reason:"ไม่พบเงื่อนไขที่เพียงพอสำหรับคำว่า “ห้าม”",text:"ข้อห้ามจริงมักขึ้นกับโรคเฉพาะ ยา การแพ้ หรือคำแนะนำของแพทย์"});
+  return {doItems:doItems.slice(0,5),limitItems:limitItems.slice(0,6),avoidItems:avoidItems.slice(0,4)};
+}
+function renderPersonalGuidance(){
+  const el=$("#personalGuidance");if(!el)return;const g=personalGuidanceItems();
+  const col=(kind,title,items)=>`<section class="guidance-col ${kind}"><h4>${title}</h4>${items.map(x=>`<div class="guidance-item"><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small><span>เหตุผล: ${esc(x.reason)}</span></div>`).join("")}</section>`;
+  el.innerHTML=col("do","ควรทำ",g.doItems)+col("limit","ควรลด",g.limitItems)+col("avoid","ควรหลีกเลี่ยง",g.avoidItems);
+}
+function medicationSafetyItems(){
+  const out=[];for(const m of db.medications||[]){const n=String(m.name||"").trim().toLowerCase();if(!n)continue;
+    if(/simvastatin|ซิมวาสแตติน/.test(n))out.push({level:"avoid",title:`${m.name}: หลีกเลี่ยง grapefruit juice`,text:"น้ำเกรปฟรุตเพิ่มระดับ simvastatin และเพิ่มโอกาสผลข้างเคียง • อ้างอิง NHS"});
+    else if(/amlodipine|แอมโลดิพีน/.test(n))out.push({level:"avoid",title:`${m.name}: หลีกเลี่ยง grapefruit / grapefruit juice`,text:"NHS แนะนำไม่กิน grapefruit หรือดื่มน้ำเกรปฟรุตระหว่างใช้ amlodipine เพราะอาจเพิ่มผลข้างเคียง"});
+    else if(/allopurinol|อัลโลพูรินอล/.test(n))out.push({level:"limit",title:`${m.name}: จำกัดแอลกอฮอล์`,text:"แอลกอฮอล์ไม่ได้หยุดฤทธิ์ allopurinol โดยตรง แต่สามารถเพิ่มกรดยูริกและกระตุ้นเกาต์ได้"});
+  }
+  if((db.medications||[]).length&&!out.length)out.push({level:"info",title:"ยังไม่มี interaction ที่ระบบ v9.0 ตรวจได้จากรายการยา",text:"ระบบไม่เดา interaction ที่ไม่รู้จัก กรุณาตรวจฉลากยา NHS/เภสัชกรก่อนงดอาหารหรือเครื่องดื่มใด ๆ"});
+  if(!(db.medications||[]).length)out.push({level:"info",title:"เพิ่มรายการยาเพื่อเปิด Medication Safety",text:"บันทึกชื่อยาให้ตรงกับฉลาก แล้วระบบจะตรวจข้อควรหลีกเลี่ยงที่มี rule รองรับ"});
+  out.push({level:"info",title:"อย่าหยุดหรือปรับขนาดยาเอง",text:"คำเตือนอาหาร/เครื่องดื่มไม่ใช่คำสั่งหยุดยา หากสงสัย interaction ให้สอบถามแพทย์หรือเภสัชกร"});
+  return out;
+}
+function renderMedicationSafety(){const el=$("#medicationSafety");if(!el)return;el.innerHTML=medicationSafetyItems().map(x=>`<div class="item med-safety ${x.level}"><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small></div></div>`).join("")}
+function healthGoalItems(){
+  const s=currentMetabolicSignals(),out=[];
+  if(s.bmi&&s.bmi.bmi>=25){const pre=(s.mg!=null&&s.mg>=100&&s.mg<126)||(s.hba&&Number(s.hba.value)>=5.7&&Number(s.hba.value)<6.5);out.push({title:"น้ำหนัก",current:`${s.bmi.kg.toFixed(1)} kg • BMI ${s.bmi.bmi.toFixed(1)}`,target:pre?`ระยะแรกลดประมาณ ${(s.bmi.kg*.05).toFixed(1)}–${(s.bmi.kg*.07).toFixed(1)} kg (5–7%)`:"ลดแบบค่อยเป็นค่อยไปและกำหนดเป้าหมายร่วมกับบุคลากรสุขภาพ",note:"เป้าหมายไม่ควรใช้ BMI อย่างเดียว; ควรดูรอบเอว ความดัน น้ำตาล ไขมัน และความสามารถในการทำต่อเนื่อง"})}
+  if(s.bp&&bpAssessment(s.bp).level==="warn")out.push({title:"ความดัน",current:`${s.bp.value}/${s.bp.value2} mmHg`,target:"เก็บค่าเฉลี่ย HBPM ที่เชื่อถือได้ก่อนกำหนดเป้าหมายการรักษา",note:"ค่าเฉลี่ยที่บ้าน ≥135/85 mmHg เป็นเกณฑ์สำคัญในการประเมินตาม NICE ไม่ใช่เป้าหมายรักษาเฉพาะบุคคล"});
+  if((s.mg!=null&&s.mg>=100)||(s.hba&&Number(s.hba.value)>=5.7))out.push({title:"น้ำตาล",current:`${s.mg!=null?`FPG ~${Math.round(s.mg)} mg/dL`:""}${s.hba?`${s.mg!=null?" • ":""}HbA1c ${s.hba.value}%`:""}`,target:"ลดปัจจัยเสี่ยงและตรวจติดตามตามแผนแพทย์",note:"แอปไม่กำหนดวันตรวจซ้ำหรือวินิจฉัยจากค่าครั้งเดียว"});
+  if((s.ldlv!=null&&s.ldlv>=3)||(s.tcv!=null&&s.tcv>=5))out.push({title:"ไขมัน",current:`${s.ldl?`LDL ${s.ldl.value} ${s.ldl.unit||""}`:""}${s.tc?`${s.ldl?" • ":""}Chol ${s.tc.value} ${s.tc.unit||""}`:""}`,target:"ประเมิน cardiovascular risk เพื่อกำหนดเป้าหมาย LDL ที่เหมาะสม",note:"เป้าหมาย LDL ขึ้นกับความเสี่ยงและโรคร่วม จึงไม่ตั้งเลขเป้าหมายเดียวให้ทุกคน"});
+  return out.length?out:[{title:"เป้าหมายสุขภาพ",current:"ข้อมูลยังไม่พอ",target:"เพิ่มข้อมูล vital signs และผลตรวจที่มีวันที่ถูกต้อง",note:"เมื่อข้อมูลครบ ระบบจะสร้างเป้าหมายที่เฉพาะเจาะจงมากขึ้น"}];
+}
+function renderHealthGoals(){const el=$("#healthGoals");if(!el)return;el.innerHTML=healthGoalItems().map(x=>`<div class="item goal-item"><div><strong>${esc(x.title)}</strong><small>ปัจจุบัน: ${esc(x.current)}</small><small>เป้าหมาย: ${esc(x.target)}</small><span>${esc(x.note)}</span></div></div>`).join("")}
+function monitoringPlanItems(){
+  const s=currentMetabolicSignals(),out=[];
+  if(s.bp&&bpAssessment(s.bp).level==="warn")out.push({title:"ความดันที่บ้าน",text:"เก็บเช้าและเย็น ครั้งละ 2 ค่า อย่างน้อย 4 วัน (เหมาะที่สุด 7 วัน) เพื่อคำนวณค่าเฉลี่ยที่น่าเชื่อถือ"});
+  if(s.bmi&&s.bmi.bmi>=25)out.push({title:"น้ำหนัก",text:"ชั่งภายใต้เงื่อนไขใกล้เคียงกันและบันทึกวันที่จริง; ดูแนวโน้มหลายสัปดาห์แทนการตอบสนองต่อค่ารายวัน"});
+  if((s.mg!=null&&s.mg>=100)||(s.hba&&Number(s.hba.value)>=5.7))out.push({title:"น้ำตาล",text:"ยืนยันว่าผลใดเป็น fasting และเก็บ HbA1c/ผลตรวจครั้งถัดไปตามรอบที่แพทย์หรือคลินิกแนะนำ"});
+  if((s.ldlv!=null&&s.ldlv>=3)||(s.tcv!=null&&s.tcv>=5)||(s.tgv!=null&&s.tgv>=1.7))out.push({title:"ไขมัน",text:"เก็บ lipid profile ครั้งถัดไปพร้อมวันที่และสถานะอดอาหาร เพื่อเปรียบเทียบแนวโน้มได้ถูกต้อง"});
+  if(s.uric&&isAbnormalByReference(s.uric))out.push({title:"กรดยูริก/อาการข้อ",text:"บันทึกว่ามีข้อบวมแดงร้อน ปวดเฉียบพลัน หรือประวัติเกาต์หรือไม่ และทบทวนยาที่อาจเกี่ยวข้องกับแพทย์"});
+  if(dataQualityFindings().length)out.push({title:"คุณภาพข้อมูล",text:"แก้วันที่ข้อมูลที่ซ้ำหรือขัดแย้งก่อนใช้สรุปแนวโน้ม"});
+  return out.length?out:[{title:"ติดตามตามปกติ",text:"เพิ่มข้อมูลตามรอบจริง และตรวจสอบวันที่/หน่วยก่อนบันทึก"}];
+}
+function renderMonitoringPlan(){const el=$("#monitoringPlan");if(!el)return;el.innerHTML=monitoringPlanItems().map(x=>`<div class="item"><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small></div></div>`).join("")}
+function renderV90(){renderPersonalGuidance();renderMedicationSafety();renderHealthGoals();renderMonitoringPlan()}
+const _v90RenderMedicalInsight=renderMedicalInsight;
+renderMedicalInsight=function(){_v90RenderMedicalInsight();renderV90()};
+renderV90();
+console.info("Personal Healthcare v9.0 Personalised Guidance loaded");
