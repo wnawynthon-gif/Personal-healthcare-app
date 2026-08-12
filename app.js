@@ -9,9 +9,22 @@ function save(){localStorage.setItem(KEY,JSON.stringify(db));renderAll();syncBad
 function uid(){return crypto?.randomUUID?.() || "id-"+Date.now()+"-"+Math.random().toString(16).slice(2)}
 function esc(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m]))}
 function fmtDate(v){if(!v)return "—";const d=new Date(v);return isNaN(d)?String(v):d.toLocaleString("th-TH",{year:"2-digit",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}
-function typeLabel(t){return ({weight:"น้ำหนัก",blood_pressure:"ความดัน",pulse:"ชีพจร",glucose:"น้ำตาล",lab:"ผลแล็บ",exercise:"ออกกำลังกาย",note:"บันทึก"})[t]||t||"—"}
+function typeLabel(t){return ({weight:"น้ำหนัก",height:"ส่วนสูง",blood_pressure:"ความดัน",pulse:"ชีพจร",glucose:"น้ำตาล",lab:"ผลแล็บ",exercise:"ออกกำลังกาย",note:"บันทึก"})[t]||t||"—"}
 function recordVal(r){if(r.type==="blood_pressure")return `${r.value??"—"}/${r.value2??"—"}`; return r.value??"—"}
-function guessUnit(type){return ({weight:"kg",blood_pressure:"mmHg",pulse:"bpm",glucose:"mg/dL"})[type]||""}
+function guessUnit(type){return ({weight:"kg",height:"cm",blood_pressure:"mmHg",pulse:"bpm",glucose:"mg/dL"})[type]||""}
+function isVital(type){return ["weight","height","blood_pressure","pulse","glucose"].includes(type)}
+function compactNote(r){
+  const note=String(r?.note||"").trim();
+  if(!note)return "";
+  if(!isVital(r?.type))return note;
+  if(/^อัปเดตจาก Dashboard v8\.[0-9]+/i.test(note))return note.replace(/v8\.[0-9]+/i,"v8.6");
+  if(/Reference:|AI flag:|Validation:|Confidence:|Status:|Source:/i.test(note)){
+    const src=(note.match(/Source:\s*([^•]+)/i)||[])[1]?.trim();
+    return src?`นำเข้าจาก AI • ${src}`:"นำเข้าจาก AI";
+  }
+  return note.length>90?note.slice(0,87)+"…":note;
+}
+function deleteRecordById(id){if(!id)return;if(confirm("ลบรายการนี้?")){db.records=db.records.filter(r=>r.id!==id);save()}}
 
 function syncBadge(){const cfg=getCfg();$("#storageBadge").textContent=cfg.url&&cfg.key?"Local + Supabase ready":"Local mode"}
 function getCfg(){try{return JSON.parse(localStorage.getItem(CFG)||"{}")}catch{return {}}}
@@ -36,21 +49,93 @@ $$(".nav").forEach(b=>b.onclick=()=>go(b.dataset.view));
 $$("[data-go]").forEach(b=>b.onclick=()=>go(b.dataset.go));
 
 function latest(type){return db.records.filter(r=>r.type===type).sort((a,b)=>new Date(b.date)-new Date(a.date))[0]}
+function bmiAssessment(){
+  const w=latest("weight"),h=latest("height");
+  const kg=Number(w?.value),cm=Number(h?.value);
+  if(!Number.isFinite(kg)||!Number.isFinite(cm)||cm<=0)return null;
+  const bmi=kg/((cm/100)**2);
+  let level="ok",label="น้ำหนักอยู่ในช่วงมาตรฐาน";
+  if(bmi<18.5){level="warn";label="น้ำหนักน้อย"}
+  else if(bmi<25){level="ok";label="ช่วงน้ำหนักมาตรฐาน"}
+  else if(bmi<30){level="warn";label="น้ำหนักเกิน"}
+  else if(bmi<35){level="warn";label="โรคอ้วนระดับ 1"}
+  else if(bmi<40){level="danger";label="โรคอ้วนระดับ 2"}
+  else {level="danger";label="โรคอ้วนระดับ 3"}
+  const m=cm/100;
+  return {bmi,level,label,kg,cm,healthyMin:18.5*m*m,healthyMax:24.9*m*m,weightDate:w?.date,heightDate:h?.date};
+}
+function labName(r){
+  const n=String(r?.analyte||r?.name||r?.test_name||String(r?.note||"").split("•")[0]||"").trim();
+  return n;
+}
+function normLabName(n){return String(n||"").toLowerCase().replace(/[^a-z0-9ก-๙]+/g,"")}
+function latestLab(matchers){
+  const rows=db.records.filter(r=>r.type==="lab"&&Number.isFinite(Number(r.value))).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  return rows.find(r=>{const n=normLabName(labName(r));return matchers.some(x=>n.includes(x))})||null;
+}
+function mmolLipid(r){
+  if(!r)return null;const v=Number(r.value),u=String(r.unit||"").toLowerCase().replace(/\s/g,"");if(!Number.isFinite(v))return null;
+  if(u.includes("mmol"))return v;
+  const n=normLabName(labName(r));
+  if(u.includes("mg/dl")||u.includes("mgdl"))return n.includes("triglycer")||n==="tg"?v/88.57:v/38.67;
+  return null;
+}
+function medicalLabFindings(){
+  const out=[];
+  const hba=latestLab(["hba1c","เอวันซี","ฮีโมโกลบินเอวันซี"]);
+  if(hba){const v=Number(hba.value),u=String(hba.unit||"");if(u.includes("%")||(!u&&v<20)){
+    if(v>=6.5)out.push({level:"danger",title:`HbA1c ${v}%`,text:"อยู่ในช่วงที่ใช้เป็นเกณฑ์วินิจฉัยเบาหวาน แต่โดยทั่วไปต้องให้แพทย์ยืนยันตามบริบท/การตรวจซ้ำหากไม่มีอาการชัดเจน"});
+    else if(v>=5.7)out.push({level:"warn",title:`HbA1c ${v}%`,text:"อยู่ในช่วงก่อนเบาหวาน ควรทบทวนอาหาร การออกกำลังกาย น้ำหนัก และติดตามตามคำแนะนำของแพทย์"});
+    else out.push({level:"ok",title:`HbA1c ${v}%`,text:"ต่ำกว่าเกณฑ์ก่อนเบาหวานตามเกณฑ์ทั่วไปของ CDC/ADA"});
+  }}
+  const tc=latestLab(["totalcholesterol","cholesteroltotal","คอเลสเตอรอลรวม"]), ldl=latestLab(["ldl"]), hdl=latestLab(["hdl"]), tg=latestLab(["triglycer","ไตรกลีเซอไรด์"]);
+  const tcv=mmolLipid(tc); if(tcv!=null)out.push({level:tcv>=5?"warn":"ok",title:`Total cholesterol ${Number(tc.value)} ${tc.unit||""}`,text:tcv>=5?"สูงกว่าแนวทางทั่วไปของ NHS (<5 mmol/L) ควรประเมินร่วมกับ HDL, non-HDL/LDL และความเสี่ยงหัวใจโดยรวม":"อยู่ต่ำกว่า 5 mmol/L ตามแนวทางทั่วไปของ NHS"});
+  const ldlv=mmolLipid(ldl); if(ldlv!=null)out.push({level:ldlv>=3?"warn":"ok",title:`LDL ${Number(ldl.value)} ${ldl.unit||""}`,text:ldlv>=3?"สูงกว่า healthy guide ทั่วไป (<3 mmol/L); เป้าหมายจริงอาจต่ำกว่านี้หากมีโรคหัวใจ เบาหวาน หรือความเสี่ยงสูง":"อยู่ต่ำกว่า 3 mmol/L ตาม healthy guide ทั่วไป"});
+  const tgv=mmolLipid(tg); if(tgv!=null)out.push({level:tgv>=2?"warn":"ok",title:`Triglycerides ${Number(tg.value)} ${tg.unit||""}`,text:tgv>=2?"ตั้งแต่ 2 mmol/L ขึ้นไปควรพิจารณาบริบทการอดอาหาร อาหาร/แอลกอฮอล์ และความเสี่ยงเมตาบอลิก":"ต่ำกว่า 2 mmol/L ตามเป้าหมาย non-fasting ของ HEART UK"});
+  if(hdl){const v=mmolLipid(hdl);if(v!=null&&v<1)out.push({level:"warn",title:`HDL ${Number(hdl.value)} ${hdl.unit||""}`,text:"HDL ต่ำกว่า 1.0 mmol/L เป็นปัจจัยที่ควรพิจารณาร่วมกับความเสี่ยงหัวใจโดยรวม (เกณฑ์ผู้หญิงทั่วไปสูงกว่า 1.2 mmol/L)"})}
+  const egfr=latestLab(["egfr","estimatedglomerularfiltration"]); if(egfr){const v=Number(egfr.value);if(v<60)out.push({level:v<30?"danger":"warn",title:`eGFR ${v} ${egfr.unit||""}`,text:"eGFR ต่ำกว่า 60 ควรติดตามกับแพทย์; CKD ต้องพิจารณาความต่อเนื่องอย่างน้อย 3 เดือนและข้อมูลไตอื่นร่วมด้วย"});else out.push({level:"ok",title:`eGFR ${v} ${egfr.unit||""}`,text:"ค่า eGFR ตั้งแต่ 60 ขึ้นไปต้องตีความร่วมกับอายุและหลักฐานความเสียหายของไตอื่น ๆ"})}
+  // For AI-imported labs not covered by a specific rule, respect the report/reference flag rather than inventing a universal range.
+  const covered=new Set([hba,tc,ldl,hdl,tg,egfr].filter(Boolean).map(r=>r.id));
+  const abnormal=db.records.filter(r=>r.type==="lab"&&!covered.has(r.id)&&["high","low","abnormal","critical"].includes(String(r.ai_flag||"").toLowerCase())).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,4);
+  for(const r of abnormal)out.push({level:String(r.ai_flag).toLowerCase()==="critical"?"danger":"warn",title:`${labName(r)||"ผลตรวจ"} ${r.value} ${r.unit||""}`,text:`รายงาน/AI ระบุว่า ${r.ai_flag}; ควรเทียบกับ reference range ของห้องแล็บและให้แพทย์ตีความร่วมกับอาการและประวัติ`});
+  return out;
+}
+function renderMedicalInsight(){
+  const el=$("#medicalSummary"), rec=$("#medicalRecommendations"); if(!el||!rec)return;
+  const bmi=bmiAssessment(),bp=latest("blood_pressure"),pulse=latest("pulse");
+  if($("#kpiBmi")){ $("#kpiBmi").textContent=bmi?bmi.bmi.toFixed(1):"—"; $("#kpiBmiStatus").textContent=bmi?bmi.label:"ต้องมีน้ำหนักและส่วนสูง"; }
+  const cards=[];
+  if(bmi)cards.push(`<div class="med-card"><small>BMI</small><b>${bmi.bmi.toFixed(1)}</b><span>${esc(bmi.label)}</span><small>ช่วง BMI 18.5–24.9 ที่ส่วนสูง ${bmi.cm} cm ≈ ${bmi.healthyMin.toFixed(1)}–${bmi.healthyMax.toFixed(1)} kg</small></div>`);
+  if(bp){const a=bpAssessment(bp);cards.push(`<div class="med-card"><small>ความดันล่าสุด</small><b>${bp.value}/${bp.value2}</b><span>${esc(a.label)}</span><small>การวินิจฉัยต้องอาศัยค่าเฉลี่ย/การวัดซ้ำที่ถูกวิธี</small></div>`)}
+  if(pulse)cards.push(`<div class="med-card"><small>ชีพจรล่าสุด</small><b>${pulse.value} ${esc(pulse.unit||"bpm")}</b><span>ตีความร่วมกับการพัก ออกกำลัง ยา และอาการ</span><small>${fmtDate(pulse.date)}</small></div>`);
+  el.innerHTML=cards.length?cards.join(""):`<div class="med-empty">เพิ่มน้ำหนัก ส่วนสูง ความดัน และผลตรวจ เพื่อเริ่มการวิเคราะห์</div>`;
+  const findings=[];
+  if(bmi){
+    if(bmi.bmi>=25)findings.push({level:bmi.bmi>=35?"danger":"warn",title:`BMI ${bmi.bmi.toFixed(1)} — ${bmi.label}`,text:"BMI เป็นเครื่องมือคัดกรอง ไม่ใช่การวินิจฉัยไขมันในร่างกาย ควรดูรอบเอว ความดัน น้ำตาล ไขมัน และปัจจัยเสี่ยงอื่นร่วมกัน แนะนำวางแผนลดน้ำหนักอย่างยั่งยืนด้วยอาหารที่เหมาะสมและกิจกรรมที่ทำได้ต่อเนื่อง"});
+    else if(bmi.bmi<18.5)findings.push({level:"warn",title:`BMI ${bmi.bmi.toFixed(1)} — น้ำหนักน้อย`,text:"ควรประเมินภาวะโภชนาการ การเปลี่ยนน้ำหนักโดยไม่ตั้งใจ และอาการร่วม โดยเฉพาะหากน้ำหนักลดเร็ว"});
+    else findings.push({level:"ok",title:`BMI ${bmi.bmi.toFixed(1)}`,text:"อยู่ในช่วง BMI มาตรฐานสำหรับผู้ใหญ่ แต่ควรประเมินสุขภาพร่วมกับรอบเอว องค์ประกอบร่างกาย และผลตรวจอื่น"});
+  }
+  if(bp){const a=bpAssessment(bp);if(a.level==="danger")findings.push({level:"danger",title:"ความดันสูงมาก",text:"วัดซ้ำหลังพักอย่างถูกวิธี หากยัง ≥180/120 mmHg โดยเฉพาะเมื่อมีเจ็บหน้าอก หายใจลำบาก อ่อนแรง สับสน การพูดหรือการมองเห็นผิดปกติ ควรรับการประเมินฉุกเฉิน"});else if(a.level==="warn")findings.push({level:"warn",title:"ความดันที่บ้านสูงกว่าค่าตัดทั่วไป",text:"NICE ใช้ค่าเฉลี่ย HBPM/ABPM ≥135/85 mmHg เพื่อยืนยันความดันสูงเมื่อเหมาะสม ควรเก็บหลายครั้งหลายวันและนำค่าเฉลี่ยให้บุคลากรสุขภาพประเมิน"})}
+  findings.push(...medicalLabFindings());
+  rec.innerHTML=findings.length?findings.map(x=>`<div class="item medical-rec ${x.level}"><span class="med-icon">${x.level==="danger"?"⚠️":x.level==="warn"?"●":"✓"}</span><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small></div></div>`).join(""):`<div class="item"><small>ยังไม่มีข้อมูลที่เพียงพอสำหรับคำแนะนำ</small></div>`;
+}
 function renderDashboard(){
-  const w=latest("weight"),bp=latest("blood_pressure"),p=latest("pulse");
+  const w=latest("weight"),h=latest("height"),bp=latest("blood_pressure"),p=latest("pulse");
   $("#kpiWeight").textContent=w?`${w.value} ${w.unit||"kg"}`:"—";
   $("#kpiWeightDate").textContent=w?fmtDate(w.date):"ยังไม่มีข้อมูล";
   $("#kpiBp").textContent=bp?`${bp.value}/${bp.value2}`:"—";
   $("#kpiBpStatus").textContent=bp?bpAssessment(bp).label:"ยังไม่มีข้อมูล";
   $("#kpiPulse").textContent=p?`${p.value} ${p.unit||"bpm"}`:"—";
   $("#kpiPulseDate").textContent=p?fmtDate(p.date):"ยังไม่มีข้อมูล";
+  $("#kpiHeight").textContent=h?`${h.value} ${h.unit||"cm"}`:"—";
+  $("#kpiHeightDate").textContent=h?fmtDate(h.date):"ยังไม่มีข้อมูล";
   $("#kpiCount").textContent=db.records.length;
-  renderWeightChart(); renderBpChart(); renderFlags(); renderRecent();
+  renderWeightChart(); renderBpChart(); renderFlags(); renderRecent(); renderMedicalInsight();
 }
 function bpAssessment(r){
   const s=Number(r.value),d=Number(r.value2);
   if(!Number.isFinite(s)||!Number.isFinite(d))return {level:"neutral",label:"ข้อมูลไม่ครบ"};
-  if(s>180||d>120)return {level:"danger",label:"สูงมาก — วัดซ้ำและประเมินอาการ"};
+  if(s>=180||d>=120)return {level:"danger",label:"สูงมาก — วัดซ้ำและประเมินอาการ"};
   if(s>=135||d>=85)return {level:"warn",label:"สูงกว่าช่วงอ้างอิงที่บ้าน"};
   return {level:"ok",label:"ต่ำกว่าเกณฑ์สูงที่บ้าน"};
 }
@@ -61,17 +146,20 @@ function renderFlags(){
     if(a.level==="danger")out.push({level:"danger",title:"ความดันล่าสุดสูงมาก",text:`${bp.value}/${bp.value2} mmHg — หากวัดซ้ำแล้วยัง >180/120 และมีอาการ เช่น เจ็บหน้าอก หายใจลำบาก อ่อนแรง การมองเห็นหรือการพูดผิดปกติ ให้ขอความช่วยเหลือฉุกเฉินทันที`});
     else if(a.level==="warn")out.push({level:"warn",title:"ติดตามความดัน",text:`ค่าล่าสุด ${bp.value}/${bp.value2} mmHg อยู่ตั้งแต่เกณฑ์ที่ NHS ใช้พิจารณาว่าความดันที่บ้านสูง (135/85) ควรติดตามค่าเฉลี่ยและคุยกับบุคลากรสุขภาพหากยังสูง`});
   }
-  const weights=db.records.filter(r=>r.type==="weight").sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const weights=db.records.filter(r=>r.type==="weight"&&Number.isFinite(Number(r.value))).sort((a,b)=>new Date(a.date)-new Date(b.date));
   if(weights.length>=2){
-    const delta=Number(weights.at(-1).value)-Number(weights[0].value);
-    out.push({level:"ok",title:"แนวโน้มน้ำหนัก",text:`จากข้อมูลที่มี เปลี่ยนแปลง ${delta>0?"+":""}${delta.toFixed(1)} kg`});
+    const prev=weights.at(-2), cur=weights.at(-1), delta=Number(cur.value)-Number(prev.value);
+    const level=Math.abs(delta)>=3?"warn":"ok";
+    out.push({level,title:"แนวโน้มน้ำหนัก",text:`เทียบ 2 ครั้งล่าสุด: ${Number(prev.value).toFixed(1)} → ${Number(cur.value).toFixed(1)} kg (${delta>0?"+":""}${delta.toFixed(1)} kg)`});
   }
   if(!out.length)out.push({level:"ok",title:"ยังไม่มีธงเตือน",text:"เพิ่มข้อมูลความดัน น้ำหนัก และผลตรวจเพื่อให้ Dashboard วิเคราะห์แนวโน้มได้มากขึ้น"});
   $("#healthFlags").innerHTML=out.map(x=>`<div class="item flag ${x.level}"><span class="flag-dot"></span><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small></div></div>`).join("");
 }
 function renderRecent(){
-  const a=[...db.records].sort((x,y)=>new Date(y.date)-new Date(x.date)).slice(0,5);
-  $("#recentRecords").innerHTML=a.length?a.map(r=>`<div class="item"><strong>${typeLabel(r.type)} • ${recordVal(r)} ${esc(r.unit||"")}</strong><small>${fmtDate(r.date)} ${r.note?`• ${esc(r.note)}`:""}</small></div>`).join(""):`<div class="item"><small>ยังไม่มีข้อมูล</small></div>`;
+  const a=[...db.records].sort((x,y)=>new Date(y.date)-new Date(x.date)).slice(0,8);
+  $("#recentRecords").innerHTML=a.length?a.map(r=>{const n=compactNote(r);return `<div class="item timeline-item"><div class="timeline-main"><strong>${typeLabel(r.type)} • ${recordVal(r)} ${esc(r.unit||"")}</strong><small>${fmtDate(r.date)}${n?` • ${esc(n)}`:""}</small></div><div class="timeline-actions"><button class="btn mini recent-edit" data-id="${esc(r.id)}">แก้</button><button class="btn mini recent-del" data-id="${esc(r.id)}">ลบ</button></div></div>`}).join(""):`<div class="item"><small>ยังไม่มีข้อมูล</small></div>`;
+  $$(".recent-edit").forEach(b=>b.onclick=()=>openRecord(b.dataset.id));
+  $$(".recent-del").forEach(b=>b.onclick=()=>deleteRecordById(b.dataset.id));
 }
 function chartSvg(rows, mode){
   if(rows.length<2)return "ยังไม่มีข้อมูลเพียงพอ";
@@ -98,12 +186,25 @@ function renderRecords(){
   const q=$("#recordSearch")?.value?.trim().toLowerCase()||"";
   let a=[...db.records].sort((x,y)=>new Date(y.date)-new Date(x.date));
   if(q)a=a.filter(r=>[typeLabel(r.type),r.type,r.note,r.unit,r.value,r.value2].join(" ").toLowerCase().includes(q));
-  $("#recordsBody").innerHTML=a.length?a.map(r=>`<tr><td>${fmtDate(r.date)}</td><td>${typeLabel(r.type)}</td><td>${recordVal(r)}</td><td>${esc(r.unit||"")}</td><td>${esc(r.note||"")}</td><td><button class="btn mini edit-rec" data-id="${r.id}">แก้</button> <button class="btn mini del-rec" data-id="${r.id}">ลบ</button></td></tr>`).join(""):`<tr><td colspan="6" class="muted">ยังไม่มีข้อมูล</td></tr>`;
+  $("#recordsBody").innerHTML=a.length?a.map(r=>`<tr><td>${fmtDate(r.date)}</td><td>${typeLabel(r.type)}</td><td>${recordVal(r)}</td><td>${esc(r.unit||"")}</td><td title="${esc(r.note||"")}">${esc(compactNote(r))}</td><td><button class="btn mini edit-rec" data-id="${r.id}">แก้</button> <button class="btn mini del-rec" data-id="${r.id}">ลบ</button></td></tr>`).join(""):`<tr><td colspan="6" class="muted">ยังไม่มีข้อมูล</td></tr>`;
   $$(".edit-rec").forEach(b=>b.onclick=()=>openRecord(b.dataset.id));
-  $$(".del-rec").forEach(b=>b.onclick=()=>{if(confirm("ลบรายการนี้?")){db.records=db.records.filter(r=>r.id!==b.dataset.id);save()}});
+  $$(".del-rec").forEach(b=>b.onclick=()=>deleteRecordById(b.dataset.id));
 }
 $("#recordSearch").oninput=renderRecords;
 $("#addRecordBtn").onclick=()=>openRecord();
+$("#cleanupRecordsBtn").onclick=()=>{
+  let changed=0;
+  db.records=db.records.map(r=>{
+    if(!isVital(r.type))return r;
+    const compact=compactNote(r);
+    if(compact && compact!==r.note && /Reference:|AI flag:|Validation:|Confidence:|Status:|Source:/i.test(String(r.note||""))){
+      changed++;return {...r,raw_note:r.raw_note||r.note,note:compact,updated_at:new Date().toISOString()};
+    }
+    return r;
+  });
+  if(changed){save();alert(`จัดระเบียบแล้ว ${changed} รายการ\nข้อความต้นฉบับยังเก็บไว้ใน raw_note`)}
+  else alert("ไม่พบ Vital Signs ที่ต้องจัดระเบียบ");
+};
 function openRecord(id){
   const r=id?db.records.find(x=>x.id===id):null;
   $("#recordDialogTitle").textContent=r?"แก้ไขข้อมูลสุขภาพ":"เพิ่มข้อมูลสุขภาพ";
@@ -114,7 +215,7 @@ function openRecord(id){
   $("#recordDialog").showModal();
 }
 function toLocalInput(v){const d=new Date(v);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16)}
-$("#recordType").onchange=()=>{if(!$("#recordUnit").value)$("#recordUnit").value=guessUnit($("#recordType").value)}
+$("#recordType").onchange=()=>{$("#recordUnit").value=guessUnit($("#recordType").value)||$("#recordUnit").value}
 $("#recordForm").onsubmit=e=>{
   e.preventDefault();
   const id=$("#recordId").value||uid(), old=db.records.find(r=>r.id===id);
@@ -122,6 +223,29 @@ $("#recordForm").onsubmit=e=>{
   if(old)db.records=db.records.map(r=>r.id===id?rec:r); else db.records.push(rec);
   save();$("#recordDialog").close();
 }
+function setQuickDate(){
+  const el=$("#quickDate"); if(!el)return;
+  const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());el.value=d.toISOString().slice(0,16);
+}
+setQuickDate();
+if($("#quickUpdateForm"))$("#quickUpdateForm").onsubmit=e=>{
+  e.preventDefault();
+  const date=new Date($("#quickDate").value);
+  if(isNaN(date)){ $("#quickUpdateStatus").textContent="วันที่/เวลาไม่ถูกต้อง"; return; }
+  const vals={weight:$("#quickWeight").value,height:$("#quickHeight").value,pulse:$("#quickPulse").value};
+  const sys=$("#quickSys").value,dia=$("#quickDia").value;
+  if((sys&&!dia)||(!sys&&dia)){ $("#quickUpdateStatus").textContent="ความดันต้องกรอกทั้ง SYS และ DIA"; return; }
+  const now=new Date().toISOString(), add=(type,value,value2=null)=>db.records.push({id:uid(),date:date.toISOString(),type,value:Number(value),value2:value2===null?null:Number(value2),unit:guessUnit(type),note:"อัปเดตจาก Dashboard v9.0",created_at:now,updated_at:now});
+  let count=0;
+  for(const [type,value] of Object.entries(vals)){if(value!==""){add(type,value);count++;}}
+  if(sys&&dia){add("blood_pressure",sys,dia);count++;}
+  if(!count){ $("#quickUpdateStatus").textContent="กรอกอย่างน้อย 1 ค่าเพื่อบันทึก"; return; }
+  save();
+  ["#quickWeight","#quickHeight","#quickSys","#quickDia","#quickPulse"].forEach(id=>$(id).value="");
+  setQuickDate();
+  $("#quickUpdateStatus").textContent=`บันทึกแล้ว ${count} รายการ`;
+};
+
 function numOrText(v){if(v==="")return null;const n=Number(v);return Number.isFinite(n)?n:v}
 
 function parseCSV(text){
@@ -171,6 +295,7 @@ function normalizeType(v){
   const s=String(v||"").trim().toLowerCase().replace(/\s+/g,"_");
   if(["bp","bloodpressure","blood_pressure","ความดัน","ความดันโลหิต"].includes(s))return "blood_pressure";
   if(["weight","น้ำหนัก"].includes(s))return "weight";
+  if(["height","ส่วนสูง","ความสูง","stature"].includes(s))return "height";
   if(["pulse","heart_rate","heartrate","ชีพจร"].includes(s))return "pulse";
   if(["glucose","blood_sugar","น้ำตาล"].includes(s))return "glucose";
   if(["exercise","ออกกำลังกาย"].includes(s))return "exercise";
@@ -193,7 +318,7 @@ function validateRec(r){
   const errors=[];
   if(!r.date)errors.push("วันที่ไม่ถูกต้อง");
   if(!r.type)errors.push("ไม่มีประเภท");
-  if(["weight","blood_pressure","pulse","glucose"].includes(r.type)&&!Number.isFinite(Number(r.value)))errors.push("ค่า 1 ไม่ใช่ตัวเลข");
+  if(["weight","height","blood_pressure","pulse","glucose"].includes(r.type)&&!Number.isFinite(Number(r.value)))errors.push("ค่า 1 ไม่ใช่ตัวเลข");
   if(r.type==="blood_pressure"&&!Number.isFinite(Number(r.value2)))errors.push("ความดันต้องมีค่า 2");
   return errors;
 }
@@ -277,7 +402,7 @@ async function handleFiles(files){
 }
 $("#pasteImportBtn").onclick=()=>$("#pasteDialog").showModal();
 $("#pasteForm").onsubmit=e=>{e.preventDefault();setImportData(parseCSV($("#pasteText").value),"pasted.csv");$("#pasteDialog").close()};
-$("#downloadTemplate").onclick=()=>downloadText("health-import-template.csv","date,type,value,value2,unit,note\n2026-08-11T08:00:00,blood_pressure,128,82,mmHg,morning\n2026-08-11T08:05:00,weight,80,,kg,\n");
+$("#downloadTemplate").onclick=()=>downloadText("health-import-template.csv","date,type,value,value2,unit,note\n2026-08-11T08:00:00,blood_pressure,128,82,mmHg,morning\n2026-08-11T08:05:00,weight,80,,kg,\n2026-08-11T08:06:00,height,170,,cm,\n");
 function downloadText(name,text,type="text/plain"){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 
 function renderMeds(){
@@ -322,7 +447,7 @@ async function renderFiles(){
   }
 }
 
-function exportData(){downloadText(`personal-healthcare-v9.1-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({version:"9.1",exported_at:new Date().toISOString(),...db},null,2),"application/json")}
+function exportData(){downloadText(`personal-healthcare-v9.1.1-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({version:"9.1.1",exported_at:new Date().toISOString(),...db},null,2),"application/json")}
 $("#exportBtn").onclick=exportData;$("#exportBtn2").onclick=exportData;
 $("#resetAll").onclick=()=>{if(confirm("ล้างข้อมูลทั้งหมดในเครื่อง? การกระทำนี้ย้อนกลับไม่ได้")){localStorage.removeItem(KEY);db=structuredClone(blank);save()}}
 
@@ -499,6 +624,9 @@ function parseHealthText(text,doc){
   // Weight
   const wrx=/(?:weight|น้ำหนัก)[^\d]{0,20}(\d{2,3}(?:\.\d+)?)\s*(kg|kgs|kilograms?)?/ig;
   while((m=wrx.exec(norm))){const v=+m[1];if(v>=25&&v<=300)add(mkDetected("weight",v,null,"kg","อ่านจาก "+(doc?.name||"เอกสาร"),date))}
+  // Height — first-class health metric in v8.6, never a lab result
+  const hrx=/(?:height|stature|ส่วนสูง|ความสูง)[^\d]{0,20}(\d{2,3}(?:\.\d+)?)\s*(cm|centimeters?|ซม\.?|เซนติเมตร)?/ig;
+  while((m=hrx.exec(norm))){const v=+m[1];if(v>=80&&v<=250)add(mkDetected("height",v,null,"cm","อ่านจาก "+(doc?.name||"เอกสาร"),date))}
   // Pulse / heart rate
   const prx=/(?:pulse|heart\s*rate|hr|ชีพจร)[^\d]{0,20}(\d{2,3})\s*(?:bpm)?/ig;
   while((m=prx.exec(norm))){const v=+m[1];if(v>=30&&v<=220)add(mkDetected("pulse",v,null,"bpm","อ่านจาก "+(doc?.name||"เอกสาร"),date))}
@@ -527,7 +655,7 @@ function renderDetectedRows(){
   body.innerHTML=detectedRows.map((r,i)=>`<tr data-i="${i}">
     <td><input type="checkbox" class="d-use" ${r.selected?"checked":""}></td>
     <td><select class="d-type">
-      ${["blood_pressure","weight","pulse","glucose","lab","exercise","note"].map(t=>`<option value="${t}" ${r.type===t?"selected":""}>${typeLabel(t)}</option>`).join("")}
+      ${["blood_pressure","weight","height","pulse","glucose","lab","exercise","note"].map(t=>`<option value="${t}" ${r.type===t?"selected":""}>${typeLabel(t)}</option>`).join("")}
     </select></td>
     <td><input class="d-date date-input" type="datetime-local" value="${toLocalInput(r.date)}"></td>
     <td><input class="d-v1" type="number" step="any" value="${esc(r.value)}"></td>
@@ -712,6 +840,7 @@ function mapAiToRecord(name,valueText,unit,note,date){
   const n=String(name||"").toLowerCase();
   let type="lab", value=numOrText(String(valueText).replace(/,/g,"").match(/-?\d+(?:\.\d+)?/)?.[0]||valueText), value2=null;
   if(/weight|น้ำหนัก/.test(n))type="weight";
+  else if(/height|stature|ส่วนสูง|ความสูง/.test(n))type="height";
   else if(/pulse|heart rate|ชีพจร/.test(n))type="pulse";
   else if(/glucose|blood sugar|น้ำตาล/.test(n))type="glucose";
   else if(/blood pressure|ความดัน/.test(n)){
@@ -737,7 +866,7 @@ if($("#saveAiResultsBtn"))$("#saveAiResultsBtn").onclick=()=>{
   $("#aiSaveStatus").textContent=`บันทึกแล้ว ${saved} รายการ${skipped?` • ข้าม ${skipped} รายการ`:""} — เปิด Dashboard เพื่อดูแนวโน้ม`;
   setTimeout(()=>go("dashboard"),700);
 };
-console.info("Personal Healthcare v8.2 AI Health Report loaded");
+console.info("Personal Healthcare v8.6 Medical Insight loaded");
 
 
 /* ================= v8.3 Validation Engine ================= */
@@ -842,7 +971,7 @@ if($("#saveAiResultsBtn"))$("#saveAiResultsBtn").onclick=()=>{
     const name=$(".air-name",tr).value.trim(),value=$(".air-value",tr).value.trim(),unit=$(".air-unit",tr).value.trim(),ref=$(".air-ref",tr).value.trim(),flag=$(".air-flag",tr).value,note=$(".air-note",tr).value.trim();
     const validation=tr.dataset.validation||"unknown",vreason=tr.dataset.validationReason||"";
     const confidence=Math.round((Number(orig.confidence)||0)*100);
-    const fullNote=`${name}${ref?` • Reference: ${ref}`:""} • AI flag: ${flag} • Validation: ${validation}${vreason?` (${vreason})`:""} • Confidence: ${confidence}%${note?` • ${note}`:""} • Status: confirmed • Source: AI Health Report v8.3`;
+    const fullNote=`${name}${ref?` • Reference: ${ref}`:""} • AI flag: ${flag} • Validation: ${validation}${vreason?` (${vreason})`:""} • Confidence: ${confidence}%${note?` • ${note}`:""} • Status: confirmed • Source: AI Health Report v9.0`;
     const rec=mapAiToRecord(name,value,unit,fullNote,docDate.toISOString());
     rec.validation_status=validation;
     rec.confirmation_status="confirmed";
@@ -857,7 +986,275 @@ if($("#saveAiResultsBtn"))$("#saveAiResultsBtn").onclick=()=>{
   updateValidationStats();
   setTimeout(()=>go("dashboard"),700);
 };
-console.info("Personal Healthcare v8.3 Validation Engine loaded");
+console.info("Personal Healthcare v8.6 Medical Insight loaded");
+
+/* ================= v9.0 Medical Analysis Engine ================= */
+const V87_MIGRATION_KEY="ph_v87_migrated";
+function daysBetween(a,b){const x=new Date(a),y=new Date(b);if(isNaN(x)||isNaN(y))return null;return Math.abs(y-x)/86400000}
+function dateOnly(v){if(!v)return "—";const d=new Date(v);return isNaN(d)?String(v):d.toLocaleDateString("th-TH",{year:"2-digit",month:"short",day:"numeric"})}
+function normalizedUnit(u){return String(u||"").trim().toLowerCase().replace(/\s/g,"")}
+function isHistoricalBmiLab(r){const n=normLabName(labName(r));return r?.type==="lab"&&(n==="bmi"||n.includes("bodymassindex")||n.includes("ดัชนีมวลกาย"))}
+function isLegacyHeightLab(r){
+  if(r?.type!=="lab")return false;
+  const n=normLabName(labName(r)),u=normalizedUnit(r.unit),v=Number(r.value);
+  const named=n.includes("height")||n.includes("ส่วนสูง")||n.includes("ความสูง");
+  return named&&Number.isFinite(v)&&v>=80&&v<=250&&(u==="cm"||u==="เซนติเมตร"||u==="");
+}
+function migrateLegacyHealthRecords(opts={silent:true}){
+  let migrated=0,cleaned=0;
+  db.records=db.records.map(r=>{
+    let x=r;
+    if(isLegacyHeightLab(x)){
+      x={...x,original_type:x.original_type||"lab",type:"height",unit:x.unit||"cm",raw_note:x.raw_note||x.note,note:"นำเข้าจากผลตรวจเดิม • จัดประเภทเป็นส่วนสูงโดย v9.0",updated_at:new Date().toISOString(),migration_v87:true};
+      migrated++;
+    }
+    if(isVital(x.type)){
+      const compact=compactNote(x);
+      if(compact&&compact!==x.note&&/Reference:|AI flag:|Validation:|Confidence:|Status:|Source:/i.test(String(x.note||""))){
+        x={...x,raw_note:x.raw_note||x.note,note:compact,updated_at:new Date().toISOString()};cleaned++;
+      }
+    }
+    return x;
+  });
+  if(migrated||cleaned){localStorage.setItem(KEY,JSON.stringify(db));if(!opts.silent)alert(`จัดระเบียบข้อมูลแล้ว\n• ย้ายส่วนสูงเก่าจากผลแล็บ: ${migrated}\n• ย่อข้อความ Vital Signs: ${cleaned}`)}
+  localStorage.setItem(V87_MIGRATION_KEY,"1");
+  return {migrated,cleaned};
+}
+function priorityLabel(level){return ({ok:"ปกติ",watch:"ควรติดตาม",consult:"ควรปรึกษาแพทย์",urgent:"เร่งด่วน"})[level]||level}
+function priorityClass(level){return ({ok:"ok",watch:"warn",consult:"warn",urgent:"danger"})[level]||"ok"}
+function refText(r){return r?.reference_range?` • ช่วงอ้างอิง ${r.reference_range}`:""}
+function labDateText(r){return r?.date?` • ${dateOnly(r.date)}`:""}
+function referenceAssessment(r){
+  if(!r)return null;const val=Number(r.value),ref=parseReferenceRange(r.reference_range);if(!Number.isFinite(val))return null;
+  if(ref.kind==="range")return {status:val<ref.min?"low":val>ref.max?"high":"normal",text:`เทียบช่วง ${ref.min}–${ref.max}`};
+  if(ref.kind==="lt")return {status:val<ref.max?"normal":"high",text:`เทียบเกณฑ์ < ${ref.max}`};
+  if(ref.kind==="gt")return {status:val>ref.min?"normal":"low",text:`เทียบเกณฑ์ > ${ref.min}`};
+  return null;
+}
+function latestAnyLab(matchers){return latestLab(matchers)}
+function glucoseMgDl(r){if(!r)return null;const v=Number(r.value),u=normalizedUnit(r.unit);if(!Number.isFinite(v))return null;if(u.includes("mmol"))return v*18;if(u.includes("mg/dl")||u.includes("mgdl")||!u)return v;return null}
+function medicalLabFindings(){
+  const out=[],covered=new Set();
+  const add=(r,x)=>{if(r?.id)covered.add(r.id);out.push({...x,date:r?.date||null})};
+  const hba=latestAnyLab(["hba1c","a1c","เอวันซี","ฮีโมโกลบินเอวันซี"]);
+  if(hba){const v=Number(hba.value),u=String(hba.unit||"");if(Number.isFinite(v)&&(u.includes("%")||(!u&&v<20))){
+    if(v>=6.5)add(hba,{level:"consult",title:`HbA1c ${v}%`,text:`อยู่ในช่วงที่ใช้เป็นเกณฑ์เบาหวาน ควรให้บุคลากรสุขภาพยืนยันตามบริบทและผลตรวจที่เหมาะสม${labDateText(hba)}`});
+    else if(v>=5.7)add(hba,{level:"watch",title:`HbA1c ${v}%`,text:`อยู่ในช่วงก่อนเบาหวาน ควรติดตามน้ำหนัก อาหาร การออกกำลังกาย และวางแผนตรวจซ้ำตามคำแนะนำ${labDateText(hba)}`});
+    else add(hba,{level:"ok",title:`HbA1c ${v}%`,text:`ต่ำกว่า 5.7% ตามเกณฑ์คัดกรองทั่วไป${labDateText(hba)}`});
+  }}
+  const fpg=latestAnyLab(["fastingglucose","fastingbloodsugar","fbs","glucosefasting","น้ำตาลอดอาหาร"]);
+  if(fpg){const mg=glucoseMgDl(fpg);if(mg!=null){if(mg>=126)add(fpg,{level:"consult",title:`Fasting glucose ${Number(fpg.value)} ${fpg.unit||""}`,text:`เทียบได้ประมาณ ${mg.toFixed(0)} mg/dL ซึ่งอยู่ในช่วงที่ใช้เป็นเกณฑ์เบาหวาน ควรยืนยันกับแพทย์${labDateText(fpg)}`});else if(mg>=100)add(fpg,{level:"watch",title:`Fasting glucose ${Number(fpg.value)} ${fpg.unit||""}`,text:`เทียบได้ประมาณ ${mg.toFixed(0)} mg/dL อยู่ในช่วงก่อนเบาหวานตามเกณฑ์คัดกรองทั่วไป${labDateText(fpg)}`});else add(fpg,{level:"ok",title:`Fasting glucose ${Number(fpg.value)} ${fpg.unit||""}`,text:`ต่ำกว่า 100 mg/dL ตามเกณฑ์คัดกรองทั่วไป${labDateText(fpg)}`})}}
+  const tc=latestAnyLab(["totalcholesterol","cholesteroltotal","cholesterol","คอเลสเตอรอลรวม"]),ldl=latestAnyLab(["ldl"]),hdl=latestAnyLab(["hdl"]),tg=latestAnyLab(["triglycer","ไตรกลีเซอไรด์"]);
+  const tcv=mmolLipid(tc);if(tcv!=null)add(tc,{level:tcv>=5?"watch":"ok",title:`Total cholesterol ${Number(tc.value)} ${tc.unit||""}`,text:`${tcv>=5?"สูงกว่า healthy guide ทั่วไป 5 mmol/L":"อยู่ต่ำกว่า healthy guide ทั่วไป 5 mmol/L"}; ควรดู LDL/HDL/non-HDL และความเสี่ยงหัวใจโดยรวม${labDateText(tc)}`});
+  const ldlv=mmolLipid(ldl);if(ldlv!=null)add(ldl,{level:ldlv>=3?"watch":"ok",title:`LDL ${Number(ldl.value)} ${ldl.unit||""}`,text:`${ldlv>=3?"สูงกว่า healthy guide ทั่วไป 3 mmol/L":"อยู่ต่ำกว่า healthy guide ทั่วไป 3 mmol/L"}; เป้าหมายจริงอาจเข้มกว่านี้ในผู้มีความเสี่ยงสูง${labDateText(ldl)}`});
+  const hdlv=mmolLipid(hdl);if(hdlv!=null)add(hdl,{level:hdlv<1?"watch":"ok",title:`HDL ${Number(hdl.value)} ${hdl.unit||""}`,text:`HDL ต้องตีความร่วมกับเพศและความเสี่ยงโดยรวม; เกณฑ์ทั่วไป NHS คือ >1.0 mmol/L ในผู้ชาย และ >1.2 ในผู้หญิง${labDateText(hdl)}`});
+  const tgv=mmolLipid(tg);if(tgv!=null)add(tg,{level:tgv>=2.3?"watch":"ok",title:`Triglycerides ${Number(tg.value)} ${tg.unit||""}`,text:`ค่าหลังอดอาหาร/ไม่อดอาหารใช้บริบทต่างกัน; ควรดูสถานะการอดอาหารและผลไขมันชุดเดียวกัน${labDateText(tg)}`});
+  const egfr=latestAnyLab(["egfr","estimatedglomerularfiltration"]);if(egfr){const v=Number(egfr.value);if(Number.isFinite(v)){if(v<30)add(egfr,{level:"consult",title:`eGFR ${v} ${egfr.unit||""}`,text:`ต่ำกว่า 30 ควรให้แพทย์ประเมินโดยดูผลซ้ำ ปัสสาวะ และบริบททางคลินิก${labDateText(egfr)}`});else if(v<60)add(egfr,{level:"watch",title:`eGFR ${v} ${egfr.unit||""}`,text:`ต่ำกว่า 60 ควรติดตาม; การวินิจฉัย CKD ต้องดูความต่อเนื่องและหลักฐานอื่นร่วมกัน${labDateText(egfr)}`});else add(egfr,{level:"ok",title:`eGFR ${v} ${egfr.unit||""}`,text:`ตั้งแต่ 60 ขึ้นไป แต่ยังต้องตีความร่วมกับอายุและหลักฐานความเสียหายของไตอื่น${labDateText(egfr)}`})}}
+  const uric=latestAnyLab(["uricacid","กรดยูริก","uric"]);if(uric){const ra=referenceAssessment(uric),flag=String(uric.ai_flag||"").toLowerCase();if(ra||flag){const abnormal=(ra&&ra.status!=="normal")||["high","low","abnormal","critical"].includes(flag);add(uric,{level:flag==="critical"?"consult":abnormal?"watch":"ok",title:`กรดยูริก ${uric.value} ${uric.unit||""}`,text:`${ra?ra.text:`รายงานระบุ ${flag||"unknown"}`}${refText(uric)}${labDateText(uric)} • การตีความกรดยูริกควรดูอาการ ประวัติเกาต์ ยา และการทำงานของไตร่วมด้วย`})}}
+  const histBmi=db.records.filter(isHistoricalBmiLab).sort((a,b)=>new Date(b.date)-new Date(a.date))[0];if(histBmi){covered.add(histBmi.id);out.push({level:"ok",title:`BMI จากผลตรวจ ${histBmi.value} ${histBmi.unit||""}`,text:`เป็นค่าจากเอกสาร ณ วันที่ ${dateOnly(histBmi.date)} ไม่ใช่ BMI ปัจจุบันที่คำนวณจากน้ำหนัก/ส่วนสูงล่าสุด`,date:histBmi.date})}
+  const abnormal=db.records.filter(r=>r.type==="lab"&&!covered.has(r.id)&&!isHistoricalBmiLab(r)&&["high","low","abnormal","critical"].includes(String(r.ai_flag||"").toLowerCase())).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5);
+  for(const r of abnormal){const ra=referenceAssessment(r);out.push({level:String(r.ai_flag).toLowerCase()==="critical"?"consult":"watch",title:`${labName(r)||"ผลตรวจ"} ${r.value} ${r.unit||""}`,text:`${ra?ra.text:`รายงาน/AI ระบุ ${r.ai_flag}`}${refText(r)}${labDateText(r)} • ระบบยังไม่มีเกณฑ์เฉพาะ จึงไม่เดาค่ามาตรฐานแทนห้องแล็บ`,date:r.date})}
+  return out;
+}
+function dataQualityFindings(){
+  const out=[];
+  const weights=db.records.filter(r=>r.type==="weight"&&Number.isFinite(Number(r.value))).sort((a,b)=>new Date(a.date)-new Date(b.date));
+  if(weights.length>=2){const a=weights.at(-2),b=weights.at(-1),d=daysBetween(a.date,b.date),delta=Number(b.value)-Number(a.value);if(d!=null&&d<1&&Math.abs(delta)>=3)out.push({level:"watch",title:"ตรวจสอบวันที่น้ำหนัก",text:`มีน้ำหนัก ${a.value} → ${b.value} kg ต่างกัน ${delta>0?"+":""}${delta.toFixed(1)} kg ภายในวันเดียว ข้อมูลอาจมาจากคนละวันที่จริง ควรแก้วันที่ก่อนใช้วิเคราะห์แนวโน้ม`})}
+  const legacy=db.records.filter(isLegacyHeightLab);if(legacy.length)out.push({level:"watch",title:"พบส่วนสูงที่ยังเป็นผลแล็บ",text:`พบ ${legacy.length} รายการ กด “จัดระเบียบข้อมูล AI” เพื่อย้ายเป็นประเภทส่วนสูง`});
+  return out;
+}
+function renderMedicalInsight(){
+  const el=$("#medicalSummary"),rec=$("#medicalRecommendations");if(!el||!rec)return;
+  const bmi=bmiAssessment(),bp=latest("blood_pressure"),pulse=latest("pulse");
+  if($("#kpiBmi")){ $("#kpiBmi").textContent=bmi?bmi.bmi.toFixed(1):"—"; $("#kpiBmiStatus").textContent=bmi?bmi.label:"ต้องมีน้ำหนักและส่วนสูง"; }
+  const cards=[];
+  if(bmi)cards.push(`<div class="med-card"><small>BMI ปัจจุบัน (คำนวณ)</small><b>${bmi.bmi.toFixed(1)}</b><span>${esc(bmi.label)}</span><small>จาก ${bmi.kg} kg / ${bmi.cm} cm • ${dateOnly(bmi.weightDate)}</small></div>`);
+  if(bp){const a=bpAssessment(bp);cards.push(`<div class="med-card"><small>ความดันล่าสุด</small><b>${bp.value}/${bp.value2}</b><span>${esc(a.label)}</span><small>${dateOnly(bp.date)} • ใช้ค่าเฉลี่ยหลายวันเมื่อต้องประเมินความดันสูง</small></div>`)}
+  if(pulse)cards.push(`<div class="med-card"><small>ชีพจรล่าสุด</small><b>${pulse.value} ${esc(pulse.unit||"bpm")}</b><span>ตีความร่วมกับการพัก ออกกำลัง ยา และอาการ</span><small>${dateOnly(pulse.date)}</small></div>`);
+  el.innerHTML=cards.length?cards.join(""):`<div class="med-empty">เพิ่มน้ำหนัก ส่วนสูง ความดัน และผลตรวจ เพื่อเริ่มการวิเคราะห์</div>`;
+  const findings=[];
+  if(bp){const a=bpAssessment(bp);if(a.level==="danger")findings.push({level:"urgent",title:"ความดันสูงมาก",text:"วัดซ้ำหลังพักอย่างถูกวิธี หากยัง ≥180/120 mmHg โดยเฉพาะเมื่อมีเจ็บหน้าอก หายใจลำบาก อ่อนแรง สับสน การพูดหรือการมองเห็นผิดปกติ ควรรับการประเมินฉุกเฉิน"});else if(a.level==="warn")findings.push({level:"watch",title:"ติดตามค่าเฉลี่ยความดันที่บ้าน",text:"ค่าล่าสุดสูงกว่าค่าตัดทั่วไปสำหรับ HBPM 135/85 mmHg ควรวัดซ้ำหลายวันอย่างถูกวิธีและใช้ค่าเฉลี่ยเพื่อประกอบการประเมิน"})}
+  if(bmi){if(bmi.bmi>=30)findings.push({level:"watch",title:`BMI ปัจจุบัน ${bmi.bmi.toFixed(1)} — ${bmi.label}`,text:"BMI เป็นเครื่องมือคัดกรอง ไม่ใช่การวัดไขมันโดยตรง ควรดูรอบเอว ความดัน น้ำตาล ไขมัน และปัจจัยเสี่ยงร่วมกัน เป้าหมายหลักคือการลดน้ำหนักอย่างยั่งยืน ไม่ใช่ลดเร็ว"});else if(bmi.bmi>=25)findings.push({level:"watch",title:`BMI ปัจจุบัน ${bmi.bmi.toFixed(1)} — น้ำหนักเกิน`,text:"ควรติดตามรอบเอวและปัจจัยเสี่ยงเมตาบอลิก พร้อมปรับอาหารและกิจกรรมอย่างต่อเนื่อง"});else findings.push({level:"ok",title:`BMI ปัจจุบัน ${bmi.bmi.toFixed(1)}`,text:"อยู่ในช่วงมาตรฐานสำหรับผู้ใหญ่ตามเกณฑ์ทั่วไป แต่ยังควรดูองค์ประกอบสุขภาพอื่นร่วมกัน"})}
+  findings.push(...medicalLabFindings(),...dataQualityFindings());
+  const rank={urgent:0,consult:1,watch:2,ok:3};findings.sort((a,b)=>(rank[a.level]??9)-(rank[b.level]??9));
+  rec.innerHTML=findings.length?findings.map(x=>`<div class="item medical-rec ${priorityClass(x.level)}"><span class="priority-pill ${x.level}">${priorityLabel(x.level)}</span><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small></div></div>`).join(""):`<div class="item"><small>ยังไม่มีข้อมูลที่เพียงพอสำหรับคำแนะนำ</small></div>`;
+}
+function renderFlags(){
+  const out=[];const bp=latest("blood_pressure");
+  if(bp){const a=bpAssessment(bp);if(a.level==="danger")out.push({level:"danger",title:"ความดันสูงมาก",text:`${bp.value}/${bp.value2} mmHg — วัดซ้ำและประเมินอาการ`});else if(a.level==="warn")out.push({level:"warn",title:"ติดตามความดัน",text:`${bp.value}/${bp.value2} mmHg — ควรดูค่าเฉลี่ยหลายวัน`})}
+  const weights=db.records.filter(r=>r.type==="weight"&&Number.isFinite(Number(r.value))).sort((a,b)=>new Date(a.date)-new Date(b.date));
+  if(weights.length>=2){const prev=weights.at(-2),cur=weights.at(-1),delta=Number(cur.value)-Number(prev.value),d=daysBetween(prev.date,cur.date);if(d!=null&&d>=1)out.push({level:Math.abs(delta)>=3?"warn":"ok",title:"แนวโน้มน้ำหนัก",text:`${Number(prev.value).toFixed(1)} → ${Number(cur.value).toFixed(1)} kg (${delta>0?"+":""}${delta.toFixed(1)} kg) ใน ${Math.round(d)} วัน`});else out.push({level:"warn",title:"ยังไม่ใช้ค่าน้ำหนักคู่นี้วิเคราะห์แนวโน้ม",text:`สองค่าล่าสุดต่างกัน ${delta>0?"+":""}${delta.toFixed(1)} kg แต่วันที่ห่างกันน้อยกว่า 1 วัน กรุณาตรวจวันที่ข้อมูล`})}
+  if(!out.length)out.push({level:"ok",title:"ยังไม่มีธงเตือน",text:"เพิ่มข้อมูลความดัน น้ำหนัก และผลตรวจเพื่อวิเคราะห์แนวโน้ม"});
+  $("#healthFlags").innerHTML=out.map(x=>`<div class="item flag ${x.level}"><span class="flag-dot"></span><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small></div></div>`).join("");
+}
+function compactNote(r){
+  const note=String(r?.note||"").trim();if(!note)return "";
+  if(!isVital(r?.type))return note.length>130?note.slice(0,127)+"…":note;
+  if(/^อัปเดตจาก Dashboard v8\.[0-9]+/i.test(note))return note.replace(/v8\.[0-9]+/i,"v9.0");
+  if(/Reference:|AI flag:|Validation:|Confidence:|Status:|Source:/i.test(note)){const src=(note.match(/Source:\s*([^•]+)/i)||[])[1]?.trim();return src?`นำเข้าจาก AI • ${src}`:"นำเข้าจาก AI"}
+  return note.length>90?note.slice(0,87)+"…":note;
+}
+if($("#cleanupRecordsBtn"))$("#cleanupRecordsBtn").onclick=()=>{const r=migrateLegacyHealthRecords({silent:false});renderAll()};
+if(!localStorage.getItem(V87_MIGRATION_KEY))migrateLegacyHealthRecords({silent:true});
+renderAll();
+console.info("Personal Healthcare v9.0 Medical Analysis Engine loaded");
+
+/* ================= v9.0 Health Risk & Action Plan ================= */
+function severityMax(levels){const rank={ok:0,watch:1,consult:2,urgent:3};return levels.reduce((best,x)=>(rank[x]>rank[best]?x:best),'ok')}
+function v88RiskGroups(){
+  const bmi=bmiAssessment(),bp=latest('blood_pressure');
+  const fpg=latestAnyLab(['fastingglucose','fastingbloodsugar','fbs','glucosefasting','น้ำตาลอดอาหาร']);
+  const hba=latestAnyLab(['hba1c','a1c','เอวันซี','ฮีโมโกลบินเอวันซี']);
+  const ldl=latestAnyLab(['ldl']),tc=latestAnyLab(['totalcholesterol','cholesteroltotal','cholesterol','คอเลสเตอรอลรวม']),tg=latestAnyLab(['triglycer','ไตรกลีเซอไรด์']);
+  const egfr=latestAnyLab(['egfr','estimatedglomerularfiltration']);
+  const groups=[];
+  // Cardiovascular / BP + lipids
+  const cvLevels=[];let cv=[];
+  if(bp){const a=bpAssessment(bp);cvLevels.push(a.level==='danger'?'urgent':a.level==='warn'?'watch':'ok');cv.push(`BP ${bp.value}/${bp.value2}`)}
+  const ldlv=mmolLipid(ldl);if(ldlv!=null){cvLevels.push(ldlv>=4.9?'consult':ldlv>=3?'watch':'ok');cv.push(`LDL ${Number(ldl.value)} ${ldl.unit||''}`.trim())}
+  const tcv=mmolLipid(tc);if(tcv!=null){cvLevels.push(tcv>=5?'watch':'ok');cv.push(`Chol ${Number(tc.value)} ${tc.unit||''}`.trim())}
+  const tgv=mmolLipid(tg);if(tgv!=null){cvLevels.push(tgv>=5.6?'consult':tgv>=1.7?'watch':'ok');cv.push(`TG ${Number(tg.value)} ${tg.unit||''}`.trim())}
+  groups.push({name:'หัวใจและหลอดเลือด',level:severityMax(cvLevels.length?cvLevels:['ok']),text:cv.length?cv.join(' • '):'ข้อมูลยังไม่พอ'});
+  // Metabolic / BMI + glycaemia
+  const metLevels=[];let met=[];
+  if(bmi){metLevels.push(bmi.bmi>=30?'watch':bmi.bmi>=25?'watch':'ok');met.push(`BMI ${bmi.bmi.toFixed(1)}`)}
+  if(fpg){const mg=glucoseMgDl(fpg);if(mg!=null){metLevels.push(mg>=126?'consult':mg>=100?'watch':'ok');met.push(`Fasting glucose ${Math.round(mg)} mg/dL`)}}
+  if(hba){const v=Number(hba.value);if(Number.isFinite(v)){metLevels.push(v>=6.5?'consult':v>=5.7?'watch':'ok');met.push(`HbA1c ${v}%`)}}
+  groups.push({name:'เมตาบอลิก / เบาหวาน',level:severityMax(metLevels.length?metLevels:['ok']),text:met.length?met.join(' • '):'ข้อมูลยังไม่พอ'});
+  // Kidney
+  let kidneyLevel='ok',kidneyText='ยังไม่มี eGFR';if(egfr){const v=Number(egfr.value);kidneyLevel=v<30?'consult':v<60?'watch':'ok';kidneyText=`eGFR ${v} ${egfr.unit||''}`.trim()}
+  groups.push({name:'ไต',level:kidneyLevel,text:kidneyText});
+  // Data quality
+  const dq=dataQualityFindings();groups.push({name:'คุณภาพข้อมูล',level:dq.length?'watch':'ok',text:dq.length?`${dq.length} จุดที่ควรตรวจสอบก่อนสรุปแนวโน้ม`:'ไม่พบปัญหาสำคัญจากข้อมูลล่าสุด'});
+  return groups;
+}
+function v88ActionPlan(){
+  const actions=[],bp=latest('blood_pressure'),bmi=bmiAssessment();
+  const fpg=latestAnyLab(['fastingglucose','fastingbloodsugar','fbs','glucosefasting','น้ำตาลอดอาหาร']);
+  const hba=latestAnyLab(['hba1c','a1c','เอวันซี','ฮีโมโกลบินเอวันซี']);
+  const ldl=latestAnyLab(['ldl']),tc=latestAnyLab(['totalcholesterol','cholesteroltotal','cholesterol','คอเลสเตอรอลรวม']),tg=latestAnyLab(['triglycer','ไตรกลีเซอไรด์']);
+  if(bp){const a=bpAssessment(bp);if(a.level==='danger')actions.push({level:'urgent',step:'ทำตอนนี้',title:'วัดความดันซ้ำและประเมินอาการ',text:'พักก่อนวัดซ้ำ หากยัง ≥180/120 mmHg โดยเฉพาะเมื่อมีเจ็บหน้าอก หายใจลำบาก อ่อนแรง สับสน หรือการพูด/มองเห็นผิดปกติ ควรรับการประเมินฉุกเฉิน'});else if(a.level==='warn')actions.push({level:'watch',step:'4–7 วันถัดไป',title:'เก็บค่าเฉลี่ยความดันที่บ้าน',text:'วัดเช้าและเย็น ครั้งละ 2 ค่า ห่างกันอย่างน้อย 1 นาที ต่อเนื่องอย่างน้อย 4 วัน (เหมาะที่สุด 7 วัน) และใช้ค่าเฉลี่ยหลังตัดวันแรกออก; หากค่าเฉลี่ยยัง ≥135/85 mmHg ควรคุยกับบุคลากรสุขภาพ'})}
+  const mg=glucoseMgDl(fpg);if((mg!=null&&mg>=100)||(hba&&Number(hba.value)>=5.7))actions.push({level:(mg>=126||Number(hba?.value)>=6.5)?'consult':'watch',step:'ติดตามผลเลือด',title:'ทบทวนน้ำตาลกับแพทย์/คลินิก',text:'ค่า fasting glucose หรือ HbA1c อยู่เหนือช่วงปกติ ควรยืนยันชนิดการตรวจ การอดอาหาร และพิจารณาตรวจซ้ำตามคำแนะนำ ไม่ควรวินิจฉัยจากค่าครั้งเดียวในแอป'});
+  const ldlv=mmolLipid(ldl),tcv=mmolLipid(tc),tgv=mmolLipid(tg);if((ldlv!=null&&ldlv>=3)||(tcv!=null&&tcv>=5)||(tgv!=null&&tgv>=1.7))actions.push({level:ldlv>=4.9?'consult':'watch',step:'นัดทบทวนความเสี่ยง',title:'ประเมินไขมันและความเสี่ยงหัวใจโดยรวม',text:'ดูผล lipid profile ทั้งชุดร่วมกับอายุ เพศ ความดัน เบาหวาน การสูบบุหรี่ ประวัติครอบครัว และยาที่ใช้ ก่อนกำหนดเป้าหมาย LDL หรือการรักษา'});
+  if(bmi&&bmi.bmi>=30)actions.push({level:'watch',step:'เป้าหมายระยะกลาง',title:'วางแผนลดน้ำหนักแบบยั่งยืน',text:'การลดน้ำหนักประมาณ 5–10% ของน้ำหนักตั้งต้นสามารถให้ประโยชน์ต่อสุขภาพได้ในหลายคน ควรเน้นอาหารที่เหมาะสม กิจกรรมที่ทำต่อเนื่องได้ การนอน และติดตามรอบเอว/ความดัน/น้ำตาล มากกว่าลดเร็ว'});
+  for(const q of dataQualityFindings())actions.push({level:'watch',step:'ก่อนดูแนวโน้ม',title:q.title,text:q.text});
+  if(!actions.length)actions.push({level:'ok',step:'ติดตามตามปกติ',title:'ยังไม่มีรายการเร่งด่วนจากข้อมูลที่มี',text:'บันทึกข้อมูลอย่างสม่ำเสมอและทบทวนผลตรวจตามรอบที่บุคลากรสุขภาพแนะนำ'});
+  const rank={urgent:0,consult:1,watch:2,ok:3};actions.sort((a,b)=>rank[a.level]-rank[b.level]);return actions.slice(0,6);
+}
+function previousOfType(type){const a=db.records.filter(r=>r.type===type).sort((x,y)=>new Date(y.date)-new Date(x.date));return a.length>=2?[a[0],a[1]]:null}
+function historicalComparisonItems(){
+  const out=[];
+  const bpPair=previousOfType('blood_pressure');if(bpPair){const [cur,prev]=bpPair,d=daysBetween(prev.date,cur.date);let chip='neutral',label='ยังไม่สรุป';if(d!=null&&d>=1){const cs=Number(cur.value)+Number(cur.value2),ps=Number(prev.value)+Number(prev.value2);chip=cs<ps?'better':cs>ps?'worse':'neutral';label=chip==='better'?'ลดลง':'สูงขึ้น'}out.push({title:'ความดัน',values:`${prev.value}/${prev.value2} → ${cur.value}/${cur.value2} mmHg`,text:d!=null&&d<1?'วันที่ห่างกันน้อยกว่า 1 วัน จึงยังไม่ใช้เป็นแนวโน้มระยะยาว':`ห่างกันประมาณ ${Math.round(d)} วัน`,chip,label})}
+  const histBmi=db.records.filter(isHistoricalBmiLab).sort((a,b)=>new Date(b.date)-new Date(a.date))[0],bmi=bmiAssessment();if(histBmi&&bmi){const d=daysBetween(histBmi.date,bmi.weightDate);let chip='neutral',label='ต่างช่วงข้อมูล';if(d!=null&&d>=1){chip=bmi.bmi<Number(histBmi.value)?'better':'worse';label=chip==='better'?'BMI ลดลง':'BMI สูงขึ้น'}out.push({title:'BMI เอกสาร → BMI ปัจจุบัน',values:`${Number(histBmi.value).toFixed(1)} → ${bmi.bmi.toFixed(1)}`,text:d!=null&&d<1?'ผลตรวจเดิมและข้อมูลล่าสุดถูกลงวันที่ใกล้กันมาก จึงไม่สรุปว่าเปลี่ยนจริงจนกว่าจะตรวจวันที่':'BMI ปัจจุบันคำนวณจากน้ำหนัก/ส่วนสูงล่าสุด ไม่ใช่ค่าจากเอกสารเดิม',chip,label})}
+  const wPair=previousOfType('weight');if(wPair){const [cur,prev]=wPair,d=daysBetween(prev.date,cur.date),delta=Number(cur.value)-Number(prev.value);let chip='neutral',label='ตรวจวันที่';if(d!=null&&d>=1){chip=delta<0?'better':delta>0?'worse':'neutral';label=delta<0?'น้ำหนักลด':'น้ำหนักเพิ่ม'}out.push({title:'น้ำหนัก',values:`${Number(prev.value).toFixed(1)} → ${Number(cur.value).toFixed(1)} kg`,text:d!=null&&d<1?'สองค่าห่างกันน้อยกว่า 1 วัน จึงยังไม่ใช้สรุปแนวโน้ม':`${delta>0?'+':''}${delta.toFixed(1)} kg ในประมาณ ${Math.round(d)} วัน`,chip,label})}
+  // Compare repeated labs with same normalized name only when dates are separated.
+  const labs=db.records.filter(r=>r.type==='lab').sort((a,b)=>new Date(b.date)-new Date(a.date));const seen=new Set();
+  for(const cur of labs){const key=normLabName(labName(cur));if(!key||seen.has(key)||isHistoricalBmiLab(cur))continue;const prev=labs.find(x=>x.id!==cur.id&&normLabName(labName(x))===key);if(!prev)continue;seen.add(key);const d=daysBetween(prev.date,cur.date);if(d==null||d<1)continue;const a=Number(prev.value),b=Number(cur.value);if(!Number.isFinite(a)||!Number.isFinite(b))continue;out.push({title:labName(cur)||'ผลแล็บ',values:`${a} → ${b} ${cur.unit||''}`.trim(),text:`เปรียบเทียบผลห่างกันประมาณ ${Math.round(d)} วัน; ควรตีความร่วมกับ reference range และบริบทการตรวจ`,chip:'neutral',label:'มีผลซ้ำ'});if(out.length>=6)break}
+  return out.slice(0,6);
+}
+function renderRiskActionPlan(){
+  const ro=$('#riskOverview'),ap=$('#actionPlan'),hc=$('#historicalComparison');if(!ro||!ap||!hc)return;
+  ro.innerHTML=v88RiskGroups().map(g=>`<div class="risk-card"><div class="risk-head"><b>${esc(g.name)}</b><span class="risk-state ${g.level}">${priorityLabel(g.level)}</span></div><small>${esc(g.text)}</small></div>`).join('');
+  ap.innerHTML=v88ActionPlan().map(a=>`<div class="item action-item ${a.level}"><div><span class="action-step">${esc(a.step)}</span><strong>${esc(a.title)}</strong><small>${esc(a.text)}</small></div></div>`).join('');
+  const items=historicalComparisonItems();hc.innerHTML=items.length?items.map(x=>`<div class="item comparison-item"><div class="comparison-values"><b>${esc(x.title)} • ${esc(x.values)}</b><small>${esc(x.text)}</small></div><span class="trend-chip ${x.chip}">${esc(x.label)}</span></div>`).join(''):`<div class="item"><small>ยังไม่มีข้อมูลซ้ำที่มีวันที่ห่างกันพอสำหรับเปรียบเทียบ</small></div>`;
+}
+function renderFlags(){
+  const out=[],dq=dataQualityFindings(),bp=latest('blood_pressure');
+  out.push(...dq.map(x=>({level:'warn',title:x.title,text:x.text})));
+  if(bp&&bpAssessment(bp).level==='warn')out.push({level:'warn',title:'ต้องการค่าเฉลี่ย HBPM',text:'ค่าความดันล่าสุดเพียงค่าเดียวไม่พอสำหรับสรุปแนวโน้ม ควรเก็บเช้า/เย็นหลายวันตามแผนด้านบน'});
+  if(!out.length)out.push({level:'ok',title:'ข้อมูลพร้อมใช้มากขึ้น',text:'ยังไม่พบปัญหาคุณภาพข้อมูลสำคัญจากรายการล่าสุด'});
+  $('#healthFlags').innerHTML=out.map(x=>`<div class="item flag ${x.level}"><span class="flag-dot"></span><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small></div></div>`).join('');
+}
+const _v88RenderMedicalInsight=renderMedicalInsight;
+renderMedicalInsight=function(){_v88RenderMedicalInsight();renderRiskActionPlan()};
+console.info('Personal Healthcare v9.0 Health Risk & Action Plan loaded');
+
+/* ================= v9.0 Personalised Do / Limit / Avoid ================= */
+function latestUric(){return latestAnyLab(["uricacid","กรดยูริก","uric"])}
+function isAbnormalByReference(r){if(!r)return false;const ra=referenceAssessment(r);if(ra)return ra.status!=="normal";return ["high","low","abnormal","critical"].includes(String(r.ai_flag||"").toLowerCase())}
+function currentMetabolicSignals(){
+  const bmi=bmiAssessment(),bp=latest("blood_pressure");
+  const fpg=latestAnyLab(["fastingglucose","fastingbloodsugar","fbs","glucosefasting","น้ำตาลอดอาหาร"]);
+  const hba=latestAnyLab(["hba1c","a1c","เอวันซี","ฮีโมโกลบินเอวันซี"]);
+  const ldl=latestAnyLab(["ldl"]),tc=latestAnyLab(["totalcholesterol","cholesteroltotal","cholesterol","คอเลสเตอรอลรวม"]),tg=latestAnyLab(["triglycer","ไตรกลีเซอไรด์"]),uric=latestUric();
+  return {bmi,bp,fpg,hba,ldl,tc,tg,uric,mg:glucoseMgDl(fpg),ldlv:mmolLipid(ldl),tcv:mmolLipid(tc),tgv:mmolLipid(tg)};
+}
+function personalGuidanceItems(){
+  const s=currentMetabolicSignals(),doItems=[],limitItems=[],avoidItems=[];
+  const addUnique=(arr,item)=>{if(!arr.some(x=>x.title===item.title))arr.push(item)};
+
+  if(s.bmi&&s.bmi.bmi>=25){
+    addUnique(doItems,{title:"ลดน้ำหนักแบบค่อยเป็นค่อยไป",reason:`BMI ปัจจุบัน ${s.bmi.bmi.toFixed(1)} (${s.bmi.label})`,text:"เน้นอาหารที่ทำต่อเนื่องได้ การนอน และกิจกรรมที่เหมาะกับข้อจำกัดร่างกาย มากกว่าการลดเร็วหรืออดอาหารรุนแรง"});
+  }
+  if((s.mg!=null&&s.mg>=100)||(s.hba&&Number(s.hba.value)>=5.7)){
+    addUnique(doItems,{title:"เพิ่มกิจกรรมทางกายสม่ำเสมอ",reason:`${s.mg!=null?`Fasting glucose ≈ ${Math.round(s.mg)} mg/dL`:""}${s.hba?`${s.mg!=null?" • ":""}HbA1c ${s.hba.value}%`:""}`,text:"หากทำได้และไม่มีข้อห้าม ตั้งเป้ากิจกรรมระดับปานกลางรวมประมาณ 150 นาที/สัปดาห์ และปรับให้เหมาะกับเข่า/ข้อ/โรคร่วม"});
+    if(s.bmi&&s.bmi.bmi>=25)addUnique(doItems,{title:"ตั้งเป้าลดน้ำหนักระยะแรก 5–7%",reason:"มีสัญญาณน้ำตาลช่วงก่อนเบาหวานร่วมกับน้ำหนักเกิน",text:`จากน้ำหนักล่าสุด ${s.bmi.kg.toFixed(1)} kg คิดเป็นประมาณ ${(s.bmi.kg*.05).toFixed(1)}–${(s.bmi.kg*.07).toFixed(1)} kg โดยควรทำแบบค่อยเป็นค่อยไป`});
+    addUnique(limitItems,{title:"ลดเครื่องดื่มหวานและน้ำตาลเติมเพิ่ม",reason:"น้ำตาลอดอาหาร/HbA1c สูงกว่าช่วงปกติ",text:"เลือกน้ำเปล่า เครื่องดื่มไม่หวาน และลดขนม/เครื่องดื่มที่มีน้ำตาลสูง"});
+  }
+  if(s.bp&&bpAssessment(s.bp).level==="warn"){
+    addUnique(doItems,{title:"วัดความดันที่บ้านอย่างเป็นระบบ",reason:`BP ล่าสุด ${s.bp.value}/${s.bp.value2} mmHg`,text:"วัดเช้าและเย็น ครั้งละ 2 ค่า ห่างกันอย่างน้อย 1 นาที หลายวัน แล้วดูค่าเฉลี่ยแทนการตัดสินจากครั้งเดียว"});
+    addUnique(limitItems,{title:"ลดเกลือและอาหารเค็มจัด",reason:`ความดันล่าสุด ${s.bp.value}/${s.bp.value2} mmHg`,text:"ลดอาหารแปรรูป ซุป/น้ำแกงเค็ม น้ำปลา ซีอิ๊ว และการเติมเกลือเพิ่ม โดยไม่ใช้เกลือโพแทสเซียมแทนเองหากมีโรคไตหรือใช้ยาบางชนิด"});
+    addUnique(limitItems,{title:"ลดแอลกอฮอล์ โดยเฉพาะถ้าดื่มมาก",reason:"ความดันสูงกว่าช่วงที่ควรติดตาม",text:"การลดการดื่มมากเกินไปช่วยลดความดันและมีประโยชน์ต่อสุขภาพด้านอื่น"});
+  }
+  if((s.ldlv!=null&&s.ldlv>=3)||(s.tcv!=null&&s.tcv>=5)){
+    addUnique(doItems,{title:"เปลี่ยนไขมันอิ่มตัวเป็นไขมันไม่อิ่มตัว",reason:`${s.ldl?`LDL ${s.ldl.value} ${s.ldl.unit||""}`:""}${s.tc?`${s.ldl?" • ":""}Cholesterol ${s.tc.value} ${s.tc.unit||""}`:""}`,text:"เลือกปลา ถั่ว เมล็ดพืช และน้ำมันพืชที่เหมาะสม พร้อมเพิ่มผัก ผลไม้ และอาหารใยอาหารสูง"});
+    addUnique(limitItems,{title:"ลดอาหารไขมันอิ่มตัว",reason:"LDL/Cholesterol สูงกว่าช่วงทั่วไป",text:"ลดเนื้อติดมัน ไส้กรอก เนย กี ชีส ครีม เค้ก/บิสกิต และอาหารที่มีไขมันอิ่มตัวสูง"});
+  }
+  if(s.tgv!=null&&s.tgv>=1.7){
+    addUnique(limitItems,{title:"ลดแอลกอฮอล์และเครื่องดื่มหวาน",reason:`Triglycerides ${s.tg.value} ${s.tg.unit||""}`,text:"แอลกอฮอล์และน้ำตาลส่วนเกินอาจทำให้ triglycerides สูงขึ้น ควรลดโดยเฉพาะเมื่อค่าผิดปกติ"});
+  }
+  if(s.uric&&isAbnormalByReference(s.uric)){
+    addUnique(doItems,{title:"ดื่มน้ำให้เพียงพอ",reason:`กรดยูริก ${s.uric.value} ${s.uric.unit||""} สูงตามรายงาน/ช่วงอ้างอิง`,text:"หากแพทย์ไม่ได้จำกัดน้ำจากโรคหัวใจหรือไต การรักษาภาวะขาดน้ำให้น้อยลงเป็นส่วนหนึ่งของการดูแลความเสี่ยงเกาต์"});
+    addUnique(limitItems,{title:"ลดเครื่องใน เนื้อแดงบางชนิด และอาหารทะเลปริมาณมาก",reason:"กรดยูริกสูง",text:"ไม่จำเป็นต้องงดอาหารทุกชนิดที่มีพิวรีน แต่ควรลดแหล่งที่มีพิวรีนสูงและดูอาการร่วม"});
+    addUnique(avoidItems,{title:"หลีกเลี่ยงการดื่มหนัก/ดื่มรวดเดียว",reason:"กรดยูริกสูง",text:"โดยเฉพาะเบียร์และสุรา ซึ่งสัมพันธ์กับความเสี่ยงเกาต์เพิ่มขึ้น; หากมีเกาต์กำเริบควรงดแอลกอฮอล์และขอคำแนะนำการรักษา"});
+  }
+  if(!doItems.length)addUnique(doItems,{title:"บันทึกข้อมูลสม่ำเสมอ",reason:"ยังไม่มีสัญญาณเฉพาะที่ต้องปรับแผน",text:"เก็บน้ำหนัก ความดัน และผลตรวจตามรอบ เพื่อให้คำแนะนำครั้งต่อไปเฉพาะบุคคลมากขึ้น"});
+  if(!limitItems.length)addUnique(limitItems,{title:"ยังไม่มีรายการเฉพาะที่ต้องลด",reason:"ข้อมูลปัจจุบันไม่ชี้ข้อจำกัดเฉพาะ",text:"คงหลักอาหารสมดุลและหลีกเลี่ยงการเปลี่ยนอาหารแบบสุดโต่งโดยไม่จำเป็น"});
+  if(!avoidItems.length)addUnique(avoidItems,{title:"ยังไม่มีข้อห้ามอาหารแบบเด็ดขาดจากข้อมูลนี้",reason:"ไม่พบเงื่อนไขที่เพียงพอสำหรับคำว่า “ห้าม”",text:"ข้อห้ามจริงมักขึ้นกับโรคเฉพาะ ยา การแพ้ หรือคำแนะนำของแพทย์"});
+  return {doItems:doItems.slice(0,5),limitItems:limitItems.slice(0,6),avoidItems:avoidItems.slice(0,4)};
+}
+function renderPersonalGuidance(){
+  const el=$("#personalGuidance");if(!el)return;const g=personalGuidanceItems();
+  const col=(kind,title,items)=>`<section class="guidance-col ${kind}"><h4>${title}</h4>${items.map(x=>`<div class="guidance-item"><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small><span>เหตุผล: ${esc(x.reason)}</span></div>`).join("")}</section>`;
+  el.innerHTML=col("do","ควรทำ",g.doItems)+col("limit","ควรลด",g.limitItems)+col("avoid","ควรหลีกเลี่ยง",g.avoidItems);
+}
+function medicationSafetyItems(){
+  const out=[];for(const m of db.medications||[]){const n=String(m.name||"").trim().toLowerCase();if(!n)continue;
+    if(/simvastatin|ซิมวาสแตติน/.test(n))out.push({level:"avoid",title:`${m.name}: หลีกเลี่ยง grapefruit juice`,text:"น้ำเกรปฟรุตเพิ่มระดับ simvastatin และเพิ่มโอกาสผลข้างเคียง • อ้างอิง NHS"});
+    else if(/amlodipine|แอมโลดิพีน/.test(n))out.push({level:"avoid",title:`${m.name}: หลีกเลี่ยง grapefruit / grapefruit juice`,text:"NHS แนะนำไม่กิน grapefruit หรือดื่มน้ำเกรปฟรุตระหว่างใช้ amlodipine เพราะอาจเพิ่มผลข้างเคียง"});
+    else if(/allopurinol|อัลโลพูรินอล/.test(n))out.push({level:"limit",title:`${m.name}: จำกัดแอลกอฮอล์`,text:"แอลกอฮอล์ไม่ได้หยุดฤทธิ์ allopurinol โดยตรง แต่สามารถเพิ่มกรดยูริกและกระตุ้นเกาต์ได้"});
+  }
+  if((db.medications||[]).length&&!out.length)out.push({level:"info",title:"ยังไม่มี interaction ที่ระบบ v9.0 ตรวจได้จากรายการยา",text:"ระบบไม่เดา interaction ที่ไม่รู้จัก กรุณาตรวจฉลากยา NHS/เภสัชกรก่อนงดอาหารหรือเครื่องดื่มใด ๆ"});
+  if(!(db.medications||[]).length)out.push({level:"info",title:"เพิ่มรายการยาเพื่อเปิด Medication Safety",text:"บันทึกชื่อยาให้ตรงกับฉลาก แล้วระบบจะตรวจข้อควรหลีกเลี่ยงที่มี rule รองรับ"});
+  out.push({level:"info",title:"อย่าหยุดหรือปรับขนาดยาเอง",text:"คำเตือนอาหาร/เครื่องดื่มไม่ใช่คำสั่งหยุดยา หากสงสัย interaction ให้สอบถามแพทย์หรือเภสัชกร"});
+  return out;
+}
+function renderMedicationSafety(){const el=$("#medicationSafety");if(!el)return;el.innerHTML=medicationSafetyItems().map(x=>`<div class="item med-safety ${x.level}"><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small></div></div>`).join("")}
+function healthGoalItems(){
+  const s=currentMetabolicSignals(),out=[];
+  if(s.bmi&&s.bmi.bmi>=25){const pre=(s.mg!=null&&s.mg>=100&&s.mg<126)||(s.hba&&Number(s.hba.value)>=5.7&&Number(s.hba.value)<6.5);out.push({title:"น้ำหนัก",current:`${s.bmi.kg.toFixed(1)} kg • BMI ${s.bmi.bmi.toFixed(1)}`,target:pre?`ระยะแรกลดประมาณ ${(s.bmi.kg*.05).toFixed(1)}–${(s.bmi.kg*.07).toFixed(1)} kg (5–7%)`:"ลดแบบค่อยเป็นค่อยไปและกำหนดเป้าหมายร่วมกับบุคลากรสุขภาพ",note:"เป้าหมายไม่ควรใช้ BMI อย่างเดียว; ควรดูรอบเอว ความดัน น้ำตาล ไขมัน และความสามารถในการทำต่อเนื่อง"})}
+  if(s.bp&&bpAssessment(s.bp).level==="warn")out.push({title:"ความดัน",current:`${s.bp.value}/${s.bp.value2} mmHg`,target:"เก็บค่าเฉลี่ย HBPM ที่เชื่อถือได้ก่อนกำหนดเป้าหมายการรักษา",note:"ค่าเฉลี่ยที่บ้าน ≥135/85 mmHg เป็นเกณฑ์สำคัญในการประเมินตาม NICE ไม่ใช่เป้าหมายรักษาเฉพาะบุคคล"});
+  if((s.mg!=null&&s.mg>=100)||(s.hba&&Number(s.hba.value)>=5.7))out.push({title:"น้ำตาล",current:`${s.mg!=null?`FPG ~${Math.round(s.mg)} mg/dL`:""}${s.hba?`${s.mg!=null?" • ":""}HbA1c ${s.hba.value}%`:""}`,target:"ลดปัจจัยเสี่ยงและตรวจติดตามตามแผนแพทย์",note:"แอปไม่กำหนดวันตรวจซ้ำหรือวินิจฉัยจากค่าครั้งเดียว"});
+  if((s.ldlv!=null&&s.ldlv>=3)||(s.tcv!=null&&s.tcv>=5))out.push({title:"ไขมัน",current:`${s.ldl?`LDL ${s.ldl.value} ${s.ldl.unit||""}`:""}${s.tc?`${s.ldl?" • ":""}Chol ${s.tc.value} ${s.tc.unit||""}`:""}`,target:"ประเมิน cardiovascular risk เพื่อกำหนดเป้าหมาย LDL ที่เหมาะสม",note:"เป้าหมาย LDL ขึ้นกับความเสี่ยงและโรคร่วม จึงไม่ตั้งเลขเป้าหมายเดียวให้ทุกคน"});
+  return out.length?out:[{title:"เป้าหมายสุขภาพ",current:"ข้อมูลยังไม่พอ",target:"เพิ่มข้อมูล vital signs และผลตรวจที่มีวันที่ถูกต้อง",note:"เมื่อข้อมูลครบ ระบบจะสร้างเป้าหมายที่เฉพาะเจาะจงมากขึ้น"}];
+}
+function renderHealthGoals(){const el=$("#healthGoals");if(!el)return;el.innerHTML=healthGoalItems().map(x=>`<div class="item goal-item"><div><strong>${esc(x.title)}</strong><small>ปัจจุบัน: ${esc(x.current)}</small><small>เป้าหมาย: ${esc(x.target)}</small><span>${esc(x.note)}</span></div></div>`).join("")}
+function monitoringPlanItems(){
+  const s=currentMetabolicSignals(),out=[];
+  if(s.bp&&bpAssessment(s.bp).level==="warn")out.push({title:"ความดันที่บ้าน",text:"เก็บเช้าและเย็น ครั้งละ 2 ค่า อย่างน้อย 4 วัน (เหมาะที่สุด 7 วัน) เพื่อคำนวณค่าเฉลี่ยที่น่าเชื่อถือ"});
+  if(s.bmi&&s.bmi.bmi>=25)out.push({title:"น้ำหนัก",text:"ชั่งภายใต้เงื่อนไขใกล้เคียงกันและบันทึกวันที่จริง; ดูแนวโน้มหลายสัปดาห์แทนการตอบสนองต่อค่ารายวัน"});
+  if((s.mg!=null&&s.mg>=100)||(s.hba&&Number(s.hba.value)>=5.7))out.push({title:"น้ำตาล",text:"ยืนยันว่าผลใดเป็น fasting และเก็บ HbA1c/ผลตรวจครั้งถัดไปตามรอบที่แพทย์หรือคลินิกแนะนำ"});
+  if((s.ldlv!=null&&s.ldlv>=3)||(s.tcv!=null&&s.tcv>=5)||(s.tgv!=null&&s.tgv>=1.7))out.push({title:"ไขมัน",text:"เก็บ lipid profile ครั้งถัดไปพร้อมวันที่และสถานะอดอาหาร เพื่อเปรียบเทียบแนวโน้มได้ถูกต้อง"});
+  if(s.uric&&isAbnormalByReference(s.uric))out.push({title:"กรดยูริก/อาการข้อ",text:"บันทึกว่ามีข้อบวมแดงร้อน ปวดเฉียบพลัน หรือประวัติเกาต์หรือไม่ และทบทวนยาที่อาจเกี่ยวข้องกับแพทย์"});
+  if(dataQualityFindings().length)out.push({title:"คุณภาพข้อมูล",text:"แก้วันที่ข้อมูลที่ซ้ำหรือขัดแย้งก่อนใช้สรุปแนวโน้ม"});
+  return out.length?out:[{title:"ติดตามตามปกติ",text:"เพิ่มข้อมูลตามรอบจริง และตรวจสอบวันที่/หน่วยก่อนบันทึก"}];
+}
+function renderMonitoringPlan(){const el=$("#monitoringPlan");if(!el)return;el.innerHTML=monitoringPlanItems().map(x=>`<div class="item"><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small></div></div>`).join("")}
+function renderV90(){renderPersonalGuidance();renderMedicationSafety();renderHealthGoals();renderMonitoringPlan()}
+const _v90RenderMedicalInsight=renderMedicalInsight;
+renderMedicalInsight=function(){_v90RenderMedicalInsight();renderV90()};
+renderV90();
+console.info("Personal Healthcare v9.0 Personalised Guidance loaded");
 
 /* ================= v9.1 Weight Management ================= */
 function bmiInfo(b){if(!Number.isFinite(b))return {label:"กรอกส่วนสูงและน้ำหนัก",level:"neutral"};if(b<18.5)return {label:"ต่ำกว่าเกณฑ์ทั่วไป",level:"warn"};if(b<25)return {label:"ช่วงทั่วไป",level:"ok"};if(b<30)return {label:"น้ำหนักเกิน",level:"warn"};return {label:"ช่วงโรคอ้วนตามเกณฑ์ BMI",level:"danger"}}

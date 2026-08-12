@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v9.1</title>
+  <title>Personal Healthcare v9.1.1</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -13,7 +13,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v9.1 • Weight & Body Tracking</small></div>
+      <div><strong>Personal Healthcare</strong><small>v9.1.1 • Guidance + Weight Tracking</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
@@ -45,7 +45,7 @@
 
     <section class="view active" id="view-dashboard">
       <div class="notice info">
-        <strong>v9.1:</strong> ติดตามเป้าหมายน้ำหนัก BMI รอบเอว อาหาร และการออกกำลัง โดยเป็นคำแนะนำสุขภาพ ไม่ใช่การวินิจฉัยโรค
+        <strong>v9.1.1:</strong> Personalised Do / Limit / Avoid พร้อม Weight & Body Tracking — คำแนะนำสุขภาพ ไม่ใช่การวินิจฉัยโรค
       </div>
 
       <div class="kpis">
@@ -59,8 +59,30 @@
           <span>ชีพจรล่าสุด</span><b id="kpiPulse">—</b><small id="kpiPulseDate">ยังไม่มีข้อมูล</small>
         </article>
         <article class="kpi">
+          <span>ส่วนสูงล่าสุด</span><b id="kpiHeight">—</b><small id="kpiHeightDate">ยังไม่มีข้อมูล</small>
+        </article>
+        <article class="kpi">
+          <span>BMI ล่าสุด</span><b id="kpiBmi">—</b><small id="kpiBmiStatus">ต้องมีน้ำหนักและส่วนสูง</small>
+        </article>
+        <article class="kpi">
           <span>บันทึกทั้งหมด</span><b id="kpiCount">0</b><small>records</small>
         </article>
+      </div>
+
+      <div class="panel quick-update-panel">
+        <div class="panel-head split">
+          <div><h3>อัปเดตข้อมูลสุขภาพ</h3><small>กรอกเฉพาะค่าที่ต้องการอัปเดต แล้วกดบันทึกครั้งเดียว</small></div>
+          <span class="v84-badge">v9.0</span>
+        </div>
+        <form id="quickUpdateForm" class="quick-update-grid">
+          <label>วันที่/เวลา<input class="input" id="quickDate" type="datetime-local" required></label>
+          <label>น้ำหนัก (kg)<input class="input" id="quickWeight" type="number" min="20" max="400" step="0.1" placeholder="เช่น 79.5"></label>
+          <label>ส่วนสูง (cm)<input class="input" id="quickHeight" type="number" min="80" max="250" step="0.1" placeholder="เช่น 170"></label>
+          <label>ความดันบน (SYS)<input class="input" id="quickSys" type="number" min="50" max="300" step="1" placeholder="เช่น 128"></label>
+          <label>ความดันล่าง (DIA)<input class="input" id="quickDia" type="number" min="30" max="200" step="1" placeholder="เช่น 82"></label>
+          <label>ชีพจร (bpm)<input class="input" id="quickPulse" type="number" min="25" max="250" step="1" placeholder="เช่น 72"></label>
+          <div class="quick-update-action"><button class="btn primary" type="submit">บันทึกการอัปเดต</button><small id="quickUpdateStatus" class="muted"></small></div>
+        </form>
       </div>
 
       <div class="grid two">
@@ -74,13 +96,58 @@
         </article>
       </div>
 
+      <div class="panel medical-insight-panel">
+        <div class="panel-head split">
+          <div><h3>Medical Analysis Engine</h3><small>BMI + Vital Signs + ผลตรวจสุขภาพ + Data Quality • จัดลำดับ ปกติ / ควรติดตาม / ควรปรึกษาแพทย์ / เร่งด่วน</small></div>
+          <span class="v84-badge">v9.0</span>
+        </div>
+        <div id="medicalSummary" class="medical-summary"></div>
+        <div id="medicalRecommendations" class="stack"></div>
+        <div class="medical-sources">เกณฑ์อ้างอิงหลักในระบบ: WHO (BMI), NICE (ความดัน), CDC (HbA1c/น้ำตาล), NHS (ไขมัน), NKF (eGFR) • v9.0 เพิ่มคำแนะนำ Do / Limit / Avoid จากข้อมูลที่มี โดยหลีกเลี่ยงคำว่า “ห้าม” เว้นแต่มีข้อห้ามชัดเจนจากยา/ภาวะเฉพาะ • ไม่ใช้แทนการวินิจฉัยหรือคำสั่งรักษา</div>
+      </div>
+
+      <div class="grid two v88-risk-grid">
+        <article class="panel">
+          <div class="panel-head split"><div><h3>Health Risk & Action Plan</h3><small>สรุปความเสี่ยงเป็นกลุ่ม และแนะนำสิ่งที่ควรทำต่อโดยไม่ใช้คะแนนตัวเลขเกินข้อมูลที่มี</small></div><span class="v84-badge">v9.0</span></div>
+          <div id="riskOverview" class="risk-overview"></div>
+          <div id="actionPlan" class="stack"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><div><h3>Historical Comparison</h3><small>เปรียบเทียบค่าปัจจุบันกับข้อมูลก่อนหน้าเมื่อวันที่น่าเชื่อถือ</small></div></div>
+          <div id="historicalComparison" class="stack"></div>
+        </article>
+      </div>
+
+      <div class="grid two v90-guidance-grid">
+        <article class="panel personalised-guidance-panel">
+          <div class="panel-head split"><div><h3>Personalised Do / Limit / Avoid</h3><small>คำแนะนำตามข้อมูลสุขภาพล่าสุด พร้อมเหตุผลว่ามาจากค่าใด</small></div><span class="v84-badge">v9.0</span></div>
+          <div id="personalGuidance" class="guidance-columns"></div>
+          <div class="medical-sources">คำแนะนำด้านพฤติกรรมอ้างอิงแนวทาง NICE / NHS / CDC และปรับตามข้อมูลที่มีในแอป • หากมีโรคประจำตัว ตั้งครรภ์ โรคไต/ตับ หรือข้อจำกัดอาหาร ควรให้บุคลากรสุขภาพปรับแผนเฉพาะบุคคล</div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><div><h3>Medication Safety</h3><small>ตรวจคำเตือนอาหาร/เครื่องดื่มจากรายการยาที่บันทึกไว้ โดยไม่สั่งหยุดยาเอง</small></div></div>
+          <div id="medicationSafety" class="stack"></div>
+        </article>
+      </div>
+
+      <div class="grid two v90-goal-grid">
+        <article class="panel">
+          <div class="panel-head"><div><h3>Health Goals</h3><small>เป้าหมายเบื้องต้นจากข้อมูลปัจจุบัน — ไม่ใช่เป้าหมายการรักษาเฉพาะบุคคล</small></div></div>
+          <div id="healthGoals" class="stack"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-head"><div><h3>Monitoring Plan</h3><small>สิ่งที่ควรบันทึกหรือทบทวนต่อ เพื่อให้การวิเคราะห์ครั้งถัดไปแม่นขึ้น</small></div></div>
+          <div id="monitoringPlan" class="stack"></div>
+        </article>
+      </div>
+
       <div class="grid two">
         <article class="panel">
-          <div class="panel-head"><div><h3>Health Flags</h3><small>ใช้เพื่อเตือนให้ติดตาม ไม่ใช่การวินิจฉัย</small></div></div>
+          <div class="panel-head"><div><h3>Data Quality & Monitoring</h3><small>ตรวจคุณภาพข้อมูลและสิ่งที่ควรวัดซ้ำ เพื่อลดการตีความผิด</small></div></div>
           <div id="healthFlags" class="stack"></div>
         </article>
         <article class="panel">
-          <div class="panel-head"><div><h3>รายการล่าสุด</h3><small>5 รายการล่าสุด</small></div></div>
+          <div class="panel-head"><div><h3>Health Timeline</h3><small>8 รายการล่าสุด • แก้ไขหรือลบได้ทันที</small></div></div>
           <div id="recentRecords" class="stack"></div>
         </article>
       </div>
@@ -120,11 +187,12 @@
       <article class="panel"><div class="panel-head"><div><h3>ประวัติ 14 รายการล่าสุด</h3><small>ลบรายการที่กรอกผิดได้</small></div></div><div class="table-wrap"><table><thead><tr><th>วันที่</th><th>น้ำหนัก</th><th>รอบเอว</th><th>แคลอรี</th><th>โปรตีน</th><th>ก้าว</th><th>กิจกรรม</th><th></th></tr></thead><tbody id="wmHistory"></tbody></table></div></article>
     </section>
 
+
     <section class="view" id="view-records">
       <div class="panel">
         <div class="panel-head split">
           <div><h3>ข้อมูลสุขภาพ</h3><small>เพิ่ม แก้ไข ลบ และค้นหาได้</small></div>
-          <div class="row"><input id="recordSearch" class="input compact" placeholder="ค้นหา type / note..." /><button class="btn primary" id="addRecordBtn">+ เพิ่มข้อมูล</button></div>
+          <div class="row"><input id="recordSearch" class="input compact" placeholder="ค้นหา type / note..." /><button class="btn ghost" id="cleanupRecordsBtn">จัดระเบียบข้อมูล AI</button><button class="btn primary" id="addRecordBtn">+ เพิ่มข้อมูล</button></div>
         </div>
         <div class="table-wrap">
           <table>
@@ -368,6 +436,7 @@
       <label>ประเภท
         <select class="input" id="recordType" required>
           <option value="weight">น้ำหนัก</option>
+          <option value="height">ส่วนสูง</option>
           <option value="blood_pressure">ความดันโลหิต</option>
           <option value="pulse">ชีพจร</option>
           <option value="glucose">น้ำตาล</option>
@@ -378,7 +447,7 @@
       </label>
       <label>ค่า 1<input class="input" id="recordValue" type="number" step="any" /></label>
       <label>ค่า 2<input class="input" id="recordValue2" type="number" step="any" placeholder="เช่น diastolic" /></label>
-      <label>หน่วย<input class="input" id="recordUnit" placeholder="kg, mmHg, bpm..." /></label>
+      <label>หน่วย<input class="input" id="recordUnit" placeholder="kg, cm, mmHg, bpm..." /></label>
       <label class="full">หมายเหตุ<textarea class="input" id="recordNote" rows="3"></textarea></label>
     </div>
     <div class="footer-actions"><button value="cancel" class="btn ghost">ยกเลิก</button><button type="submit" value="default" class="btn primary" id="recordSave">บันทึก</button></div>
