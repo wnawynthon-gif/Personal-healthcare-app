@@ -1,11 +1,11 @@
 {
-  "name": "Personal Healthcare v8.6",
-  "short_name": "Health v8.6",
+  "name": "Personal Healthcare v8.7",
+  "short_name": "Health v8.7",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f7f7",
   "theme_color": "#0f766e",
-  "description": "Personal Healthcare v8.6 with BMI and medical insight, health timeline, smart document import, AI validation and Supabase sync.",
+  "description": "Personal Healthcare v8.7 with BMI and medical insight, health timeline, smart document import, AI validation and Supabase sync.",
   "icons": []
 }

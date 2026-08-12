@@ -1,5 +1,5 @@
 {
-  "version": "V8.6",
-  "buildId": "8.6.0-20260812",
-  "ocrEngine": "V8.6 Timeline + Data Cleanup + Validation Engine"
+  "version": "V8.7",
+  "buildId": "8.7.0-20260812",
+  "ocrEngine": "V8.7 Medical Analysis Engine + Data Quality"
 }
