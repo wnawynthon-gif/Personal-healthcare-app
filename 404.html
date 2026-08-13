@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v9.6</title>
+  <title>Personal Healthcare v9.7</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -13,7 +13,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v9.6 • Complete Health Platform</small></div>
+      <div><strong>Personal Healthcare</strong><small>v9.7 • Recovery + Cloud Safety</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
@@ -48,7 +48,7 @@
 
     <section class="view active" id="view-dashboard">
       <div class="notice info">
-        <strong>v9.3–v9.6:</strong> Accuracy Engine + บันทึกความดันที่บ้าน + แผนเป้าหมาย 65 kg + บัญชีและซิงก์ Supabase
+        <strong>v9.7:</strong> Accuracy Engine + บันทึกความดันที่บ้าน + แผน 65 kg + กู้รหัสผ่าน + Cloud Backup
       </div>
 
       <div class="kpis">
@@ -78,11 +78,11 @@
           <span class="v84-badge">v9.0</span>
         </div>
         <form id="quickUpdateForm" class="quick-update-grid">
-          <label>วันที่/เวลา<input class="input" id="quickDate" type="datetime-local" required></label>
-          <label>น้ำหนัก (kg)<input class="input" id="quickWeight" type="number" min="20" max="400" step="0.1" placeholder="เช่น 79.5"></label>
+          <label>วันที่/เวลา<input class="input" id="quickDate" type="datetime-local" required><small class="field-hint">แตะเพื่อเลือกวันและเวลา</small></label>
+          <label>น้ำหนัก (kg)<input class="input" id="quickWeight" type="number" inputmode="decimal" min="20" max="400" step="0.1" placeholder="เช่น 88.0"></label>
           <label>ส่วนสูง (cm)<input class="input" id="quickHeight" type="number" min="80" max="250" step="0.1" placeholder="เช่น 170"></label>
-          <label>ความดันบน (SYS)<input class="input" id="quickSys" type="number" min="50" max="300" step="1" placeholder="เช่น 128"></label>
-          <label>ความดันล่าง (DIA)<input class="input" id="quickDia" type="number" min="30" max="200" step="1" placeholder="เช่น 82"></label>
+          <label>ความดันบน (SYS)<input class="input" id="quickSys" type="number" inputmode="numeric" min="50" max="300" step="1" placeholder="เช่น 135"></label>
+          <label>ความดันล่าง (DIA)<input class="input" id="quickDia" type="number" inputmode="numeric" min="30" max="200" step="1" placeholder="เช่น 92"></label>
           <label>ชีพจร (bpm)<input class="input" id="quickPulse" type="number" min="25" max="250" step="1" placeholder="เช่น 72"></label>
           <div class="quick-update-action"><button class="btn primary" type="submit">บันทึกการอัปเดต</button><small id="quickUpdateStatus" class="muted"></small></div>
         </form>
@@ -175,11 +175,11 @@
         </article>
         <article class="panel"><div class="panel-head"><div><h3>บันทึกวันนี้</h3><small>น้ำหนัก รอบเอว อาหาร และกิจกรรม</small></div></div>
           <form id="bodyLogForm" class="form-grid">
-            <label>วันที่<input class="input" id="wmDate" type="date" required></label><label>น้ำหนัก (kg)<input class="input" id="wmWeight" type="number" min="20" max="400" step="0.1"></label>
-            <label>รอบเอว (cm)<input class="input" id="wmWaistInput" type="number" min="30" max="250" step="0.1"></label><label>พลังงานที่กิน (kcal)<input class="input" id="wmCaloriesEaten" type="number" min="0" max="10000"></label>
-            <label>โปรตีน (g)<input class="input" id="wmProteinEaten" type="number" min="0" max="500"></label><label>จำนวนก้าว<input class="input" id="wmStepsDone" type="number" min="0" max="100000"></label>
-            <label>คาร์ดิโอ (นาที)<input class="input" id="wmCardio" type="number" min="0" max="600"></label><label>เวทเทรนนิ่ง (นาที)<input class="input" id="wmStrength" type="number" min="0" max="600"></label>
-            <button class="btn primary full" type="submit">บันทึกข้อมูลวันนี้</button>
+            <label>วันที่<input class="input" id="wmDate" type="date" required><small class="field-hint">เลือกวันที่บันทึก</small></label><label>น้ำหนัก (kg)<input class="input" id="wmWeight" type="number" inputmode="decimal" min="20" max="400" step="0.1" placeholder="เช่น 88.0"></label>
+            <label>รอบเอว (cm)<input class="input" id="wmWaistInput" type="number" inputmode="decimal" min="30" max="250" step="0.1" placeholder="เช่น 100"></label><label>พลังงานที่กิน (kcal)<input class="input" id="wmCaloriesEaten" type="number" inputmode="numeric" min="0" max="10000" placeholder="เช่น 1800"></label>
+            <label>โปรตีน (g)<input class="input" id="wmProteinEaten" type="number" inputmode="numeric" min="0" max="500" placeholder="เช่น 90"></label><label>จำนวนก้าว<input class="input" id="wmStepsDone" type="number" inputmode="numeric" min="0" max="100000" placeholder="เช่น 6000"></label>
+            <label>คาร์ดิโอ (นาที)<input class="input" id="wmCardio" type="number" inputmode="numeric" min="0" max="600" placeholder="เช่น 20"></label><label>เวทเทรนนิ่ง (นาที)<input class="input" id="wmStrength" type="number" inputmode="numeric" min="0" max="600" placeholder="เช่น 15"></label>
+            <button class="btn primary full" type="submit">บันทึกข้อมูลวันนี้</button><small id="bodyLogStatus" class="muted full"></small>
           </form>
         </article>
       </div>
@@ -225,11 +225,11 @@
       <div class="grid two">
         <article class="panel"><div class="panel-head"><div><h3>เพิ่มชุดวัด</h3><small>ใช้ค่า 2 ครั้งที่วัดห่างกันอย่างน้อย 1 นาที</small></div></div>
           <form id="bpSessionForm" class="form-grid">
-            <label>วันที่<input class="input" id="bpSessionDate" type="date" required></label><label>ช่วงเวลา<select class="input" id="bpPeriod"><option value="morning">เช้า</option><option value="evening">เย็น</option></select></label>
-            <label>ครั้งที่ 1 SYS<input class="input" id="bpSys1" type="number" min="50" max="300" required></label><label>ครั้งที่ 1 DIA<input class="input" id="bpDia1" type="number" min="30" max="200" required></label>
-            <label>ครั้งที่ 2 SYS<input class="input" id="bpSys2" type="number" min="50" max="300" required></label><label>ครั้งที่ 2 DIA<input class="input" id="bpDia2" type="number" min="30" max="200" required></label>
+            <label>วันที่<input class="input" id="bpSessionDate" type="date" required><small class="field-hint">เลือกวันที่วัด</small></label><label>ช่วงเวลา<select class="input" id="bpPeriod"><option value="morning">เช้า</option><option value="evening">เย็น</option></select></label>
+            <label>ครั้งที่ 1 SYS (ตัวบน)<input class="input" id="bpSys1" type="number" inputmode="numeric" min="50" max="300" placeholder="เช่น 135" required></label><label>ครั้งที่ 1 DIA (ตัวล่าง)<input class="input" id="bpDia1" type="number" inputmode="numeric" min="30" max="200" placeholder="เช่น 92" required></label>
+            <label>ครั้งที่ 2 SYS (ตัวบน)<input class="input" id="bpSys2" type="number" inputmode="numeric" min="50" max="300" placeholder="เช่น 132" required></label><label>ครั้งที่ 2 DIA (ตัวล่าง)<input class="input" id="bpDia2" type="number" inputmode="numeric" min="30" max="200" placeholder="เช่น 90" required></label>
             <label class="full checkline"><input id="bpRested" type="checkbox" required> พักอย่างน้อย 5 นาที ไม่พูดระหว่างวัด และวางแขนระดับหัวใจ</label>
-            <button class="btn primary full" type="submit">บันทึกชุดวัดและค่าเฉลี่ย</button>
+            <button class="btn primary full" type="submit">บันทึกชุดวัดและค่าเฉลี่ย</button><small id="bpFormStatus" class="muted full"></small>
           </form>
         </article>
         <article class="panel"><div class="panel-head"><div><h3>วิธีวัดและสรุป</h3><small>ลดความคลาดเคลื่อนจากท่าทางและค่าครั้งเดียว</small></div></div><div id="bpProtocol" class="stack"></div></article>
@@ -450,9 +450,10 @@
     <section class="view" id="view-settings">
       <div class="grid two">
         <div class="panel account-panel">
-          <h3>บัญชีและการซิงก์ v9.6</h3><p class="muted">ใช้ Supabase Auth เพื่อแยกข้อมูลของแต่ละคน ไม่เก็บรหัสผ่านในแอป</p>
+          <h3>บัญชีและการซิงก์ v9.7</h3><p class="muted">ใช้ Supabase Auth เพื่อแยกข้อมูลของแต่ละคน ไม่เก็บรหัสผ่านในแอป</p>
           <label>Email<input class="input" id="accountEmail" type="email" autocomplete="email" placeholder="name@example.com"></label><label>Password<input class="input" id="accountPassword" type="password" autocomplete="current-password" minlength="6" placeholder="อย่างน้อย 6 ตัวอักษร"></label>
-          <div class="row"><button class="btn primary" id="signInBtn" type="button">เข้าสู่ระบบ</button><button class="btn ghost" id="signUpBtn" type="button">สมัครบัญชี</button><button class="btn ghost" id="signOutBtn" type="button">ออกจากระบบ</button></div><p id="accountStatus" class="muted">ยังไม่ได้เข้าสู่ระบบ</p>
+          <div class="row"><button class="btn primary" id="signInBtn" type="button">เข้าสู่ระบบ</button><button class="btn ghost" id="signUpBtn" type="button">สมัครบัญชี</button><button class="btn ghost" id="forgotPasswordBtn" type="button">ลืมรหัสผ่าน</button><button class="btn ghost" id="signOutBtn" type="button">ออกจากระบบ</button></div><p id="accountStatus" class="muted">ยังไม่ได้เข้าสู่ระบบ</p>
+          <div id="recoveryPanel" class="notice hidden"><strong>ตั้งรหัสผ่านใหม่</strong><p class="muted">เปิดหน้านี้จากลิงก์ Recovery แล้วกรอกรหัสใหม่อย่างน้อย 8 ตัว</p><label>รหัสผ่านใหม่<input class="input" id="newAccountPassword" type="password" autocomplete="new-password" minlength="8"></label><button class="btn primary" id="updatePasswordBtn" type="button">บันทึกรหัสผ่านใหม่</button></div>
           <div class="row"><button class="btn primary" id="syncPushBtn" type="button">ส่งข้อมูลขึ้น Cloud</button><button class="btn ghost" id="syncPullBtn" type="button">ดึงข้อมูลจาก Cloud</button></div><p id="syncStatus" class="muted"></p>
         </div>
         <div class="panel">

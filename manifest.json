@@ -1,11 +1,11 @@
 {
-  "name": "Personal Healthcare v9.6",
-  "short_name": "Health v9.6",
+  "name": "Personal Healthcare v9.7",
+  "short_name": "Health v9.7",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f7f7",
   "theme_color": "#0f766e",
-  "description": "Personal Healthcare v9.6 with accuracy trends, home blood pressure protocol, 65 kg plan, accounts, secure cloud sync and backup restore.",
+  "description": "Personal Healthcare v9.7 with account recovery, accuracy trends, home blood pressure protocol, 65 kg plan and secure cloud backup.",
   "icons": []
 }
