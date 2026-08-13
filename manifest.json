@@ -1,11 +1,11 @@
 {
-  "name": "Personal Healthcare v9.7.4",
-  "short_name": "Health v9.7.4",
+  "name": "Personal Healthcare v9.7.5",
+  "short_name": "Health v9.7.5",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f7f7",
   "theme_color": "#0f766e",
-  "description": "Personal Healthcare v9.7.4 with cache-proof mobile layout, account recovery, accuracy trends, home blood pressure protocol, 65 kg plan and secure cloud backup.",
+  "description": "Personal Healthcare v9.7.5 with permanent mobile Supabase login configuration and secure cloud backup.",
   "icons": []
 }

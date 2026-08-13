@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v9.7.4</title>
-  <link rel="manifest" href="manifest.webmanifest?v=9.7.4" />
-  <link rel="stylesheet" href="styles.css?v=9.7.4" />
+  <title>Personal Healthcare v9.7.5</title>
+  <link rel="manifest" href="manifest.webmanifest?v=9.7.5" />
+  <link rel="stylesheet" href="styles.css?v=9.7.5" />
   <style id="mobile-v974">
   @media(max-width:700px){
     html,body{width:100%!important;max-width:100%!important;margin:0!important;overflow-x:hidden!important;-webkit-text-size-adjust:100%}
@@ -35,7 +35,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v9.7.4 • Mobile Ready</small></div>
+      <div><strong>Personal Healthcare</strong><small>v9.7.5 • Mobile Login Fixed</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
@@ -613,9 +613,10 @@
   </form>
 </dialog>
 
-<script src="app.js?v=9.7.4"></script>
+<script src="config.js?v=9.7.5"></script>
+<script src="app.js?v=9.7.5"></script>
 <script>
-if('serviceWorker' in navigator){window.addEventListener('load',async()=>{try{const r=await navigator.serviceWorker.getRegistrations();await Promise.all(r.map(x=>x.unregister()));if('caches' in window){const k=await caches.keys();await Promise.all(k.map(x=>caches.delete(x)))}await navigator.serviceWorker.register('./sw.js?v=9.7.4')}catch(e){console.warn(e)}})}
+if('serviceWorker' in navigator){window.addEventListener('load',async()=>{try{const r=await navigator.serviceWorker.getRegistrations();await Promise.all(r.map(x=>x.unregister()));if('caches' in window){const k=await caches.keys();await Promise.all(k.map(x=>caches.delete(x)))}await navigator.serviceWorker.register('./sw.js?v=9.7.5')}catch(e){console.warn(e)}})}
 </script>
 </body>
 </html>

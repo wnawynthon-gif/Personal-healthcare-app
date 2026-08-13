@@ -26,8 +26,18 @@ function compactNote(r){
 }
 function deleteRecordById(id){if(!id)return;if(confirm("ลบรายการนี้?")){db.records=db.records.filter(r=>r.id!==id);save()}}
 
+function deploymentCfg(){
+  const c=window.PH_CONFIG||{};
+  const url=String(c.supabaseUrl||"").trim().replace(/\/$/,"");
+  const key=String(c.supabaseAnonKey||"").trim();
+  return {url,key};
+}
 function syncBadge(){const cfg=getCfg();$("#storageBadge").textContent=cfg.url&&cfg.key?"Local + Supabase ready":"Local mode"}
-function getCfg(){try{return JSON.parse(localStorage.getItem(CFG)||"{}")}catch{return {}}}
+function getCfg(){
+  const deployed=deploymentCfg();
+  if(deployed.url&&deployed.key)return deployed;
+  try{return JSON.parse(localStorage.getItem(CFG)||"{}")}catch{return {}}
+}
 function setCfg(c){localStorage.setItem(CFG,JSON.stringify(c));syncBadge()}
 
 function go(view){
@@ -470,7 +480,12 @@ async function supabaseInsert(table,rows){
   if(!res.ok)throw new Error(`${res.status} ${await res.text()}`);return true;
 }
 function loadSettings(){
-  const c=getCfg();$("#supabaseUrl").value=c.url||"";$("#supabaseKey").value=c.key||"";
+  const c=getCfg(),deployed=deploymentCfg();$("#supabaseUrl").value=c.url||"";$("#supabaseKey").value=c.key||"";
+  if(deployed.url&&deployed.key){
+    $("#supabaseUrl").readOnly=true;$("#supabaseKey").readOnly=true;
+    $("#saveSupabase").classList.add("hidden");
+    $("#supabaseStatus").textContent="เชื่อมต่ออัตโนมัติจากการตั้งค่าของแอป";
+  }
   const a=getAiCfg(); if($("#aiFunctionUrl"))$("#aiFunctionUrl").value=a.functionUrl||deriveAiFunctionUrl(c.url||""); if($("#aiAnonKey"))$("#aiAnonKey").value=a.anonKey||c.key||"";
 }
 
@@ -1387,9 +1402,10 @@ if($("#planForm"))$("#planForm").onsubmit=e=>{e.preventDefault();db.weightGoal={
 
 /* ================= v9.7 Auth Recovery, Sync, Backup ================= */
 const AUTH_KEY="ph_v96_auth";function getAuth(){try{return JSON.parse(localStorage.getItem(AUTH_KEY)||"null")}catch{return null}}function authToken(){return getAuth()?.access_token||getCfg().key}
-async function authRequest(path,body){const c=getCfg();if(!c.url||!c.key)throw new Error("กรอก Project URL และ Anon Key ก่อน");const r=await fetch(`${c.url}/auth/v1/${path}`,{method:"POST",headers:{apikey:c.key,"Content-Type":"application/json"},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw new Error(j.msg||j.error_description||j.message||`HTTP ${r.status}`);return j}
-async function accountAction(kind){const email=$("#accountEmail").value.trim(),password=$("#accountPassword").value,status=$("#accountStatus");status.textContent="กำลังดำเนินการ…";try{const a=await authRequest(kind==="signup"?"signup":"token?grant_type=password",{email,password});if(a.access_token)localStorage.setItem(AUTH_KEY,JSON.stringify(a));status.textContent=a.access_token?`เข้าสู่ระบบแล้ว: ${a.user?.email||email}`:"สมัครแล้ว โปรดยืนยันอีเมลก่อนเข้าสู่ระบบ";syncBadge()}catch(e){status.textContent="ไม่สำเร็จ: "+e.message}}
-if($("#signInBtn"))$("#signInBtn").onclick=()=>accountAction("signin");if($("#signUpBtn"))$("#signUpBtn").onclick=()=>accountAction("signup");if($("#signOutBtn"))$("#signOutBtn").onclick=()=>{localStorage.removeItem(AUTH_KEY);$("#accountStatus").textContent="ออกจากระบบแล้ว";syncBadge()};
+async function authRequest(path,body){const c=getCfg();if(!c.url||!c.key)throw new Error("แอปยังไม่ได้ตั้งค่า Supabase ใน config.js");const r=await fetch(`${c.url}/auth/v1/${path}`,{method:"POST",headers:{apikey:c.key,"Content-Type":"application/json"},body:JSON.stringify(body)});let j={};try{j=await r.json()}catch{}if(!r.ok)throw new Error(j.msg||j.error_description||j.message||`HTTP ${r.status}`);return j}
+function renderAccountState(message=""){const a=getAuth(),signedIn=Boolean(a?.access_token);if($("#signOutBtn"))$("#signOutBtn").classList.toggle("hidden",!signedIn);if(message&&$("#accountStatus"))$("#accountStatus").textContent=message}
+async function accountAction(kind){const email=$("#accountEmail").value.trim(),password=$("#accountPassword").value,status=$("#accountStatus");if(!email||!password){status.textContent="กรุณากรอก Email และ Password";return}status.textContent="กำลังดำเนินการ…";try{const a=await authRequest(kind==="signup"?"signup":"token?grant_type=password",{email,password});if(a.access_token)localStorage.setItem(AUTH_KEY,JSON.stringify(a));renderAccountState(a.access_token?`เข้าสู่ระบบแล้ว: ${a.user?.email||email}`:"สมัครแล้ว โปรดยืนยันอีเมลก่อนเข้าสู่ระบบ");syncBadge()}catch(e){renderAccountState("ไม่สำเร็จ: "+e.message)}}
+if($("#signInBtn"))$("#signInBtn").onclick=()=>accountAction("signin");if($("#signUpBtn"))$("#signUpBtn").onclick=()=>accountAction("signup");if($("#signOutBtn"))$("#signOutBtn").onclick=()=>{localStorage.removeItem(AUTH_KEY);renderAccountState("ออกจากระบบแล้ว");syncBadge()};renderAccountState();
 function recoveryRedirect(){return location.origin+location.pathname}
 if($("#forgotPasswordBtn"))$("#forgotPasswordBtn").onclick=async()=>{const email=$("#accountEmail").value.trim(),s=$("#accountStatus");if(!email){s.textContent="กรอกอีเมลก่อน แล้วกดลืมรหัสผ่าน";return}s.textContent="กำลังส่งลิงก์…";try{await authRequest("recover",{email,redirect_to:recoveryRedirect()});s.textContent="ส่งลิงก์แล้ว • เปิดอีเมลฉบับล่าสุดเพื่อตั้งรหัสใหม่"}catch(e){s.textContent=e.message.includes("rate limit")?"ส่งอีเมลเกินโควตา Supabase • ใช้ Add user + Auto Confirm หรือรอให้โควตารีเซ็ต":"ส่งลิงก์ไม่สำเร็จ: "+e.message}};
 function readRecoverySession(){const p=new URLSearchParams(location.hash.slice(1));if(p.get("type")!=="recovery"||!p.get("access_token"))return;localStorage.setItem(AUTH_KEY,JSON.stringify({access_token:p.get("access_token"),refresh_token:p.get("refresh_token"),token_type:p.get("token_type")||"bearer",expires_in:Number(p.get("expires_in")||3600),user:null,recovery:true}));$("#recoveryPanel")?.classList.remove("hidden");$("#accountStatus").textContent="ยืนยันลิงก์แล้ว • กรุณาตั้งรหัสผ่านใหม่";go("settings")}
@@ -1401,4 +1417,4 @@ if($("#syncPullBtn"))$("#syncPullBtn").onclick=async()=>{const s=$("#syncStatus"
 if($("#restoreJsonInput"))$("#restoreJsonInput").onchange=async e=>{const s=$("#restoreStatus");try{const j=JSON.parse(await e.target.files[0].text());if(!Array.isArray(j.records))throw new Error("ไม่พบ records ในไฟล์");if(confirm(`Restore ${j.records.length} records และแทนข้อมูลในเครื่อง?`)){db={...blank,...j};save();s.textContent="Restore สำเร็จ"}}catch(err){s.textContent="Restore ไม่สำเร็จ: "+err.message}e.target.value=""};
 const _v96RenderAll=renderAll;renderAll=function(){_v96RenderAll();renderBpSessions();renderWeightPlan();const a=getAuth();if($("#accountStatus")&&a?.user)$("#accountStatus").textContent=`เข้าสู่ระบบแล้ว: ${a.user.email||a.user.id}`};
 $("#bpSessionDate").value=new Date().toISOString().slice(0,10);renderBpSessions();renderWeightPlan();
-console.info("Personal Healthcare v9.7 recovery and cloud safety loaded");
+console.info("Personal Healthcare v9.7.5 permanent mobile auth configuration loaded");
