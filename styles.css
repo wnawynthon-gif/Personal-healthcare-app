@@ -137,3 +137,33 @@ input[type="date"],input[type="datetime-local"],input[type="number"],select.inpu
   #bodyLogForm,#bpSessionForm{grid-template-columns:repeat(2,minmax(0,1fr))!important;column-gap:18px!important}
   #quickUpdateForm .quick-update-action,#bodyLogForm .full,#bpSessionForm .full{grid-column:1/-1!important}
 }
+
+/* v9.7.2 equal-height iPad date controls */
+#quickDate,#wmDate,#bpSessionDate{
+  -webkit-appearance:none!important;
+  appearance:none!important;
+  display:block!important;
+  width:100%!important;
+  height:48px!important;
+  min-height:48px!important;
+  max-height:48px!important;
+  padding:10px 12px!important;
+  line-height:26px!important;
+  text-align:left!important;
+  overflow:hidden!important;
+}
+#quickDate::-webkit-date-and-time-value,
+#wmDate::-webkit-date-and-time-value,
+#bpSessionDate::-webkit-date-and-time-value{
+  display:block!important;
+  width:100%!important;
+  min-height:0!important;
+  height:26px!important;
+  line-height:26px!important;
+  padding:0!important;
+  margin:0!important;
+  text-align:left!important;
+}
+#quickDate::-webkit-calendar-picker-indicator,
+#wmDate::-webkit-calendar-picker-indicator,
+#bpSessionDate::-webkit-calendar-picker-indicator{margin:0!important;padding:0!important}

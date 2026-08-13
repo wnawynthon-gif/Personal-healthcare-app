@@ -1,6 +1,6 @@
 {
-  "version": "V9.7.1",
-  "buildId": "9.7.1-20260813",
+  "version": "V9.7.2",
+  "buildId": "9.7.2-20260813",
   "ocrEngine": "V9.7 Complete Health Platform + Account Recovery",
   "features": ["In-app Password Recovery", "Recovery URL Handler", "Accuracy & Trend Engine", "Home Blood Pressure Protocol", "65 kg Weekly Plan", "Supabase Auth & Cloud Snapshot", "Backup & Restore", "Integrated AI Health Coach", "Medication Safety"]
 }
