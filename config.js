@@ -8,6 +8,6 @@
  * including iPhone Safari, will then connect automatically.
  */
 window.PH_CONFIG = Object.freeze({
-  supabaseUrl: "",
-  supabaseAnonKey: ""
+  supabaseUrl: "https://cwiruiiotmxtkebfiwhm.supabase.co",
+  supabaseAnonKey: "sb_publishable_eIezF4Ghfgj773Nnm3X3NA_pgNcq57U"
 });
