@@ -167,3 +167,47 @@ input[type="date"],input[type="datetime-local"],input[type="number"],select.inpu
 #quickDate::-webkit-calendar-picker-indicator,
 #wmDate::-webkit-calendar-picker-indicator,
 #bpSessionDate::-webkit-calendar-picker-indicator{margin:0!important;padding:0!important}
+
+/* v9.7.3 iPhone responsive width fix */
+html,body{width:100%;max-width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%}
+.app,.sidebar,.sidebar nav,main,.view,.topbar,.topbar>*,.notice,.panel,.kpi,.item{min-width:0;max-width:100%}
+.app{width:100%;overflow-x:clip}
+.sidebar{width:100%}
+.sidebar nav{width:100%;max-width:100%;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
+.topbar h1,.topbar p,.notice,.panel,.item,.coach-item,.coach-trend-card{overflow-wrap:anywhere}
+img,svg,canvas,video{max-width:100%}
+
+@media(max-width:620px){
+  main{width:100%;padding:14px 12px 40px}
+  .sidebar{padding:8px 10px}
+  .brand{padding:4px 2px 8px}
+  .logo{width:36px;height:36px;border-radius:11px;flex:0 0 36px}
+  .brand strong{font-size:14px}
+  .brand small{font-size:10px}
+  .sidebar nav{gap:5px;padding-bottom:2px}
+  .nav{flex:0 0 auto;padding:9px 11px;font-size:12px}
+  .topbar{width:100%;gap:12px;margin-bottom:14px}
+  .topbar h1{font-size:23px;line-height:1.25}
+  .topbar p{font-size:13px;line-height:1.45}
+  .top-actions{display:grid;grid-template-columns:1fr;width:100%;gap:8px}
+  .top-actions .btn{width:100%;min-width:0}
+  .notice{padding:11px 12px;font-size:12px;line-height:1.5}
+  .panel{padding:14px;border-radius:13px}
+  .kpis,.coach-kpis,.wm-kpis,.bp-kpis,.plan-kpis{grid-template-columns:1fr}
+  .kpi{padding:14px}
+  .kpi b{font-size:24px}
+  .coach-hero{gap:10px}
+  .coach-hero h2{font-size:21px;line-height:1.35}
+  .coach-hero p{font-size:13px}
+  .panel-head{align-items:flex-start;flex-wrap:wrap}
+  .panel-head.split{flex-direction:column}
+  .panel-head .btn{max-width:100%}
+  .item{padding:11px}
+  .item strong,.item small,.item span{white-space:normal;overflow-wrap:anywhere}
+  .btn{min-height:44px;white-space:normal}
+  .row,.import-actions,.footer-actions{width:100%;align-items:stretch;flex-direction:column}
+  .row .btn,.import-actions .btn,.footer-actions .btn{width:100%}
+  .mapping{grid-template-columns:1fr}
+  dialog,.wide-dialog{width:calc(100vw - 20px);max-width:calc(100vw - 20px);margin:auto}
+  dialog form,.wide-dialog form{padding:14px}
+}

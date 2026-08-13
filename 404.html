@@ -4,16 +4,38 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v9.7</title>
-  <link rel="manifest" href="manifest.webmanifest?v=9.7.2" />
-  <link rel="stylesheet" href="styles.css?v=9.7.2" />
+  <title>Personal Healthcare v9.7.4</title>
+  <link rel="manifest" href="manifest.webmanifest?v=9.7.4" />
+  <link rel="stylesheet" href="styles.css?v=9.7.4" />
+  <style id="mobile-v974">
+  @media(max-width:700px){
+    html,body{width:100%!important;max-width:100%!important;margin:0!important;overflow-x:hidden!important;-webkit-text-size-adjust:100%}
+    body *{box-sizing:border-box}.app{display:block!important;width:100%!important;max-width:100%!important;min-width:0!important;overflow:hidden!important}
+    .sidebar{position:relative!important;width:100%!important;max-width:100%!important;min-width:0!important;height:auto!important;padding:10px 12px!important;overflow:hidden!important}
+    .brand{width:100%!important;min-width:0!important;padding:4px 0 10px!important}.logo{width:38px!important;height:38px!important;flex:0 0 38px!important}
+    .brand strong{font-size:15px!important}.brand small{font-size:10px!important}
+    .sidebar nav{display:flex!important;width:100%!important;max-width:100%!important;min-width:0!important;gap:6px!important;overflow-x:auto!important;overflow-y:hidden!important;-webkit-overflow-scrolling:touch}
+    .nav{flex:0 0 auto!important;width:auto!important;max-width:none!important;padding:9px 11px!important;font-size:12px!important;white-space:nowrap!important}
+    main{display:block!important;width:100%!important;max-width:100%!important;min-width:0!important;padding:14px 12px 40px!important;overflow:hidden!important}
+    .view,.topbar,.topbar>div,.notice,.panel,.kpi,.grid,.item{width:100%!important;max-width:100%!important;min-width:0!important}
+    .topbar{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:12px!important}.topbar h1{font-size:24px!important}.topbar p{font-size:13px!important;white-space:normal!important;overflow-wrap:anywhere!important}
+    .top-actions{display:grid!important;grid-template-columns:1fr!important;width:100%!important;gap:8px!important}.top-actions .btn{display:block!important;width:100%!important;min-width:0!important}
+    .kpis,.coach-kpis,.wm-kpis,.bp-kpis,.plan-kpis,.coach-trends,.grid.two,.guidance-columns,.medical-summary,.risk-overview,.validation-kpis,.file-grid,.mapping,.save-stats{display:grid!important;grid-template-columns:minmax(0,1fr)!important;width:100%!important}
+    .panel,.kpi{padding:14px!important;overflow:hidden!important}.notice,.panel,.kpi,.item,.coach-item,.coach-trend-card,.panel *{max-width:100%!important;overflow-wrap:anywhere!important}
+    .coach-hero{display:flex!important;flex-direction:column!important;align-items:stretch!important}.coach-hero h2{font-size:21px!important}
+    .panel-head{flex-wrap:wrap!important;align-items:flex-start!important}.panel-head.split{flex-direction:column!important}
+    .row,.import-actions,.footer-actions{display:flex!important;flex-direction:column!important;align-items:stretch!important;width:100%!important}.row .btn,.import-actions .btn,.footer-actions .btn{width:100%!important}
+    .btn{min-height:44px!important;white-space:normal!important}input,select,textarea{max-width:100%!important;min-width:0!important}
+    dialog,.wide-dialog{width:calc(100vw - 20px)!important;max-width:calc(100vw - 20px)!important;margin:auto!important}.table-wrap{width:100%!important;max-width:100%!important;overflow-x:auto!important}
+  }
+  </style>
 </head>
 <body>
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v9.7 • Recovery + Cloud Safety</small></div>
+      <div><strong>Personal Healthcare</strong><small>v9.7.4 • Mobile Ready</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
@@ -591,6 +613,9 @@
   </form>
 </dialog>
 
-<script src="app.js?v=9.7.2"></script>
+<script src="app.js?v=9.7.4"></script>
+<script>
+if('serviceWorker' in navigator){window.addEventListener('load',async()=>{try{const r=await navigator.serviceWorker.getRegistrations();await Promise.all(r.map(x=>x.unregister()));if('caches' in window){const k=await caches.keys();await Promise.all(k.map(x=>caches.delete(x)))}await navigator.serviceWorker.register('./sw.js?v=9.7.4')}catch(e){console.warn(e)}})}
+</script>
 </body>
 </html>
