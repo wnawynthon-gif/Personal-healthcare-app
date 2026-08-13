@@ -124,3 +124,16 @@ input[type="date"],input[type="datetime-local"],input[type="number"],select.inpu
   .quick-update-action{align-items:stretch;flex-direction:column}
   .quick-update-action .btn{width:100%}
 }
+
+/* v9.7.1 definitive Safari/iPad form spacing fix */
+#quickUpdateForm,#bodyLogForm,#bpSessionForm{grid-template-columns:1fr!important;row-gap:20px!important;column-gap:0!important;align-items:stretch!important}
+#quickUpdateForm>label,#bodyLogForm>label,#bpSessionForm>label{display:flex!important;flex-direction:column!important;gap:8px!important;margin:0!important;line-height:1.45!important;min-height:0!important;overflow:visible!important}
+#quickUpdateForm .input,#bodyLogForm .input,#bpSessionForm .input{display:block!important;position:static!important;width:100%!important;max-width:100%!important;min-width:0!important;height:48px!important;margin:0!important;padding:10px 12px!important;line-height:1.25!important}
+#quickUpdateForm .field-hint,#bodyLogForm .field-hint,#bpSessionForm .field-hint{margin:0!important;line-height:1.35!important}
+#quickUpdateForm .quick-update-action,#bodyLogForm .full,#bpSessionForm .full{grid-column:1!important;width:100%!important;margin-top:2px!important}
+#bpSessionForm .checkline{min-height:auto!important;height:auto!important;display:flex!important;flex-direction:row!important;align-items:flex-start!important}
+@media(min-width:1200px) and (hover:hover) and (pointer:fine){
+  #quickUpdateForm{grid-template-columns:repeat(3,minmax(0,1fr))!important;column-gap:16px!important}
+  #bodyLogForm,#bpSessionForm{grid-template-columns:repeat(2,minmax(0,1fr))!important;column-gap:18px!important}
+  #quickUpdateForm .quick-update-action,#bodyLogForm .full,#bpSessionForm .full{grid-column:1/-1!important}
+}
