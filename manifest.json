@@ -1,11 +1,11 @@
 {
-  "name": "Personal Healthcare v9.7.5",
-  "short_name": "Health v9.7.5",
+  "name": "Personal Healthcare v9.7.7",
+  "short_name": "Health v9.7.7",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f7f7",
   "theme_color": "#0f766e",
-  "description": "Personal Healthcare v9.7.5 with permanent mobile Supabase login configuration and secure cloud backup.",
+  "description": "Personal Healthcare v9.7.7 with isolated per-account device storage and automatic private cloud sync.",
   "icons": []
 }

@@ -211,3 +211,6 @@ img,svg,canvas,video{max-width:100%}
   dialog,.wide-dialog{width:calc(100vw - 20px);max-width:calc(100vw - 20px);margin:auto}
   dialog form,.wide-dialog form{padding:14px}
 }
+/* Deployment settings stay in the DOM for app initialization but are never
+   shown to people using the shared app. */
+.admin-config{display:none!important}

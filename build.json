@@ -1,6 +1,6 @@
 {
-  "version": "V9.7.5",
-  "buildId": "9.7.5-20260813",
-  "ocrEngine": "V9.7.5 Permanent Mobile Auth Configuration",
+  "version": "V9.7.7",
+  "buildId": "9.7.7-20260813",
+  "ocrEngine": "V9.7.7 Private Per-account Data + Auto Sync",
   "features": ["In-app Password Recovery", "Recovery URL Handler", "Accuracy & Trend Engine", "Home Blood Pressure Protocol", "65 kg Weekly Plan", "Supabase Auth & Cloud Snapshot", "Backup & Restore", "Integrated AI Health Coach", "Medication Safety"]
 }

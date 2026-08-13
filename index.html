@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v9.7.5</title>
-  <link rel="manifest" href="manifest.webmanifest?v=9.7.5" />
-  <link rel="stylesheet" href="styles.css?v=9.7.5" />
+  <title>Personal Healthcare v9.7.7</title>
+  <link rel="manifest" href="manifest.webmanifest?v=9.7.7" />
+  <link rel="stylesheet" href="styles.css?v=9.7.7" />
   <style id="mobile-v974">
   @media(max-width:700px){
     html,body{width:100%!important;max-width:100%!important;margin:0!important;overflow-x:hidden!important;-webkit-text-size-adjust:100%}
@@ -35,7 +35,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v9.7.5 • Mobile Login Fixed</small></div>
+      <div><strong>Personal Healthcare</strong><small>v9.7.7 • Private Accounts</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
@@ -472,13 +472,13 @@
     <section class="view" id="view-settings">
       <div class="grid two">
         <div class="panel account-panel">
-          <h3>บัญชีและการซิงก์ v9.7</h3><p class="muted">ใช้ Supabase Auth เพื่อแยกข้อมูลของแต่ละคน ไม่เก็บรหัสผ่านในแอป</p>
+          <h3>บัญชีส่วนตัว</h3><p class="muted">สมัครบัญชีหรือเข้าสู่ระบบเพื่อเก็บข้อมูลสุขภาพแยกเฉพาะแต่ละคนอย่างปลอดภัย</p>
           <label>Email<input class="input" id="accountEmail" type="email" autocomplete="email" placeholder="name@example.com"></label><label>Password<input class="input" id="accountPassword" type="password" autocomplete="current-password" minlength="6" placeholder="อย่างน้อย 6 ตัวอักษร"></label>
           <div class="row"><button class="btn primary" id="signInBtn" type="button">เข้าสู่ระบบ</button><button class="btn ghost" id="signUpBtn" type="button">สมัครบัญชี</button><button class="btn ghost" id="forgotPasswordBtn" type="button">ลืมรหัสผ่าน</button><button class="btn ghost" id="signOutBtn" type="button">ออกจากระบบ</button></div><p id="accountStatus" class="muted">ยังไม่ได้เข้าสู่ระบบ</p>
           <div id="recoveryPanel" class="notice hidden"><strong>ตั้งรหัสผ่านใหม่</strong><p class="muted">เปิดหน้านี้จากลิงก์ Recovery แล้วกรอกรหัสใหม่อย่างน้อย 8 ตัว</p><label>รหัสผ่านใหม่<input class="input" id="newAccountPassword" type="password" autocomplete="new-password" minlength="8"></label><button class="btn primary" id="updatePasswordBtn" type="button">บันทึกรหัสผ่านใหม่</button></div>
           <div class="row"><button class="btn primary" id="syncPushBtn" type="button">ส่งข้อมูลขึ้น Cloud</button><button class="btn ghost" id="syncPullBtn" type="button">ดึงข้อมูลจาก Cloud</button></div><p id="syncStatus" class="muted"></p>
         </div>
-        <div class="panel">
+        <div class="panel admin-config" aria-hidden="true">
           <h3>Supabase (Optional)</h3>
           <p class="muted">ใส่ Project URL และ Anon Key เพื่อซิงก์ตาราง health_records / medications / documents</p>
           <label>Project URL<input class="input" id="supabaseUrl" placeholder="https://xxxx.supabase.co"></label>
@@ -487,7 +487,7 @@
           <p id="supabaseStatus" class="muted"></p>
         </div>
         
-        <div class="panel">
+        <div class="panel admin-config" aria-hidden="true">
           <h3>AI Health Analysis</h3>
           <p class="muted">v8.2 ใช้ Supabase Edge Function เป็นตัวกลาง เพื่อไม่เปิดเผย OpenAI API key ใน GitHub Pages</p>
           <label>Edge Function URL
@@ -613,10 +613,10 @@
   </form>
 </dialog>
 
-<script src="config.js?v=9.7.5"></script>
-<script src="app.js?v=9.7.5"></script>
+<script src="config.js?v=9.7.7"></script>
+<script src="app.js?v=9.7.7"></script>
 <script>
-if('serviceWorker' in navigator){window.addEventListener('load',async()=>{try{const r=await navigator.serviceWorker.getRegistrations();await Promise.all(r.map(x=>x.unregister()));if('caches' in window){const k=await caches.keys();await Promise.all(k.map(x=>caches.delete(x)))}await navigator.serviceWorker.register('./sw.js?v=9.7.5')}catch(e){console.warn(e)}})}
+if('serviceWorker' in navigator){window.addEventListener('load',async()=>{try{const r=await navigator.serviceWorker.getRegistrations();await Promise.all(r.map(x=>x.unregister()));if('caches' in window){const k=await caches.keys();await Promise.all(k.map(x=>caches.delete(x)))}await navigator.serviceWorker.register('./sw.js?v=9.7.7')}catch(e){console.warn(e)}})}
 </script>
 </body>
 </html>
