@@ -1,6 +1,6 @@
-# Personal Healthcare v9.2 — Integrated AI Health Coach
+# Personal Healthcare v9.1.1 — Guidance + Weight & Body Tracking
 
-v9.2 ต่อจากฐาน v9.1.3 และเพิ่ม AI Health Coach ที่รวม Weight/BMI/รอบเอว/ความดัน/ผลแล็บ/อาหาร/โปรตีน/ก้าว/กิจกรรม เพื่อสร้างแผนวันนี้พร้อมหลักฐานและข้อควรระวัง โดยคงข้อมูลเดิมและการแก้หน้าจอ iPad ไว้
+Hotfix v9.1.1 รวม Personalised Do / Limit / Avoid และ Medication Safety จาก v9.0 กลับเข้ากับโมดูลควบคุมน้ำหนัก v9.1 โดยคงข้อมูลเดิมไว้
 
 เวอร์ชันนี้สร้างใหม่ให้ Import เสถียรกว่าเดิม โดยไม่ผูกการ Save กับการตรวจไฟล์ทั้งก้อน
 
