@@ -1,6 +1,6 @@
-# Personal Healthcare v9.1.1 — Guidance + Weight & Body Tracking
+# Personal Healthcare v9.6 — Accuracy, BP, 65 kg Plan & Secure Sync
 
-Hotfix v9.1.1 รวม Personalised Do / Limit / Avoid และ Medication Safety จาก v9.0 กลับเข้ากับโมดูลควบคุมน้ำหนัก v9.1 โดยคงข้อมูลเดิมไว้
+v9.6 รวมการพัฒนา v9.3–v9.6 บนฐานเดิม: Accuracy & Trend Engine, Home Blood Pressure, แผนเป้าหมาย 65 kg, Supabase Auth/Cloud snapshot และ Backup/Restore โดยคงข้อมูลเดิมและการแก้หน้าจอ iPad ไว้
 
 เวอร์ชันนี้สร้างใหม่ให้ Import เสถียรกว่าเดิม โดยไม่ผูกการ Save กับการตรวจไฟล์ทั้งก้อน
 

@@ -1,7 +1,7 @@
 
 const $=(s,root=document)=>root.querySelector(s); const $$=(s,root=document)=>[...root.querySelectorAll(s)];
 const KEY="ph_v8_data", CFG="ph_v8_cfg"; const FILE_DB="ph_v81_files", FILE_STORE="documents";
-const blank={records:[],medications:[],documents:[],weightGoal:{},bodyLogs:[]};
+const blank={records:[],medications:[],documents:[],weightGoal:{},bodyLogs:[],bpSessions:[]};
 let db=load(), importState={raw:[],headers:[],valid:[],invalid:[],duplicates:[]};
 
 function load(){try{return {...blank,...JSON.parse(localStorage.getItem(KEY)||"{}")}}catch{return structuredClone(blank)}}
@@ -36,6 +36,9 @@ function go(view){
   const meta={
     dashboard:["ภาพรวมสุขภาพ","สรุปข้อมูลล่าสุด แนวโน้ม และสิ่งที่ควรติดตาม"],
     weight:["ควบคุมน้ำหนัก","เป้าหมาย BMI รอบเอว อาหาร และการออกกำลัง"],
+    coach:["AI Health Coach","แผนวันนี้จากน้ำหนัก BMI รอบเอว ความดัน ผลแล็บ อาหาร และกิจกรรม"],
+    bp:["บันทึกความดัน","เช้าและเย็น ครั้งละ 2 ค่า พร้อมค่าเฉลี่ยหลายวัน"],
+    plan:["แผน 65 kg","เป้าหมายรายสัปดาห์ แนวโน้มที่แม่นขึ้น และแผนลงมือทำ"],
     records:["ข้อมูลสุขภาพ","บันทึกและจัดการข้อมูลสุขภาพแบบโครงสร้าง"],
     import:["นำเข้าข้อมูล","Import Center v8.0 — ตรวจและแก้ไขก่อนบันทึก"],
     meds:["ยา & เตือน","ช่วยจัดรายการยาและเวลาเตือน"],
@@ -447,7 +450,7 @@ async function renderFiles(){
   }
 }
 
-function exportData(){downloadText(`personal-healthcare-v9.1.1-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({version:"9.1.1",exported_at:new Date().toISOString(),...db},null,2),"application/json")}
+function exportData(){downloadText(`personal-healthcare-v9.6-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({version:"9.6",exported_at:new Date().toISOString(),...db},null,2),"application/json")}
 $("#exportBtn").onclick=exportData;$("#exportBtn2").onclick=exportData;
 $("#resetAll").onclick=()=>{if(confirm("ล้างข้อมูลทั้งหมดในเครื่อง? การกระทำนี้ย้อนกลับไม่ได้")){localStorage.removeItem(KEY);db=structuredClone(blank);save()}}
 
@@ -1279,3 +1282,118 @@ console.info("Personal Healthcare v9.1 Weight Management loaded");
 renderMedicalInsight();
 renderWeightManagement();
 console.info("Personal Healthcare v9.1.2 Display Hotfix loaded");
+
+/* ================= v9.2 Integrated AI Health Coach ================= */
+function coachWeights(){
+  const rows=db.records.filter(r=>r.type==="weight"&&Number.isFinite(Number(r.value))).map(r=>({date:new Date(r.date),value:Number(r.value)})).filter(r=>!isNaN(r.date)).sort((a,b)=>a.date-b.date);
+  const byDay=new Map();
+  for(const r of rows){const key=`${r.date.getFullYear()}-${String(r.date.getMonth()+1).padStart(2,"0")}-${String(r.date.getDate()).padStart(2,"0")}`;byDay.set(key,r)}
+  return [...byDay.values()].sort((a,b)=>a.date-b.date);
+}
+function coachWeightTrend(days){
+  const cut=Date.now()-days*86400000,rows=coachWeights().filter(r=>r.date.getTime()>=cut);
+  if(rows.length<2)return {days,count:rows.length,delta:null,label:"ข้อมูลไม่พอ"};
+  const span=(rows.at(-1).date-rows[0].date)/86400000;
+  if(span<1)return {days,count:rows.length,delta:null,label:"รอข้อมูลวันถัดไป"};
+  const delta=rows.at(-1).value-rows[0].value;
+  return {days,count:rows.length,delta,label:`${delta>0?"+":""}${delta.toFixed(1)} kg`};
+}
+function coachAdherence7(){
+  const goal=db.weightGoal||{},cut=Date.now()-7*86400000,logs=(db.bodyLogs||[]).filter(x=>new Date(x.date).getTime()>=cut);
+  let met=0,total=0;
+  for(const x of logs){
+    if(goal.calories&&Number.isFinite(Number(x.calories))){total++;if(Number(x.calories)<=Number(goal.calories))met++}
+    if(goal.protein&&Number.isFinite(Number(x.protein))){total++;if(Number(x.protein)>=Number(goal.protein))met++}
+    if(goal.steps&&Number.isFinite(Number(x.steps))){total++;if(Number(x.steps)>=Number(goal.steps))met++}
+    if(Number(x.cardio)>0||Number(x.strength)>0){total++;met++}
+  }
+  return {logs:logs.length,total,met,pct:total?Math.round(met/total*100):null};
+}
+function coachItem(x){return `<div class="item coach-item ${esc(x.level||"info")}"><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small>${x.evidence?`<span>อ้างอิงจาก: ${esc(x.evidence)}</span>`:""}</div></div>`}
+function renderHealthCoach(){
+  if(!$("#coachHeadline"))return;
+  const goal=db.weightGoal||{},bmi=bmiAssessment(),bp=latest("blood_pressure"),logs=[...(db.bodyLogs||[])].sort((a,b)=>new Date(a.date)-new Date(b.date)),last=logs.at(-1),weights=coachWeights(),t7=coachWeightTrend(7),t30=coachWeightTrend(30),t90=coachWeightTrend(90),adh=coachAdherence7();
+  const labFindings=medicalLabFindings(),needsFollowup=x=>["warn","watch","danger","consult","urgent"].includes(String(x?.level||"").toLowerCase()),followups=labFindings.filter(needsFollowup);
+  if(bp&&bpAssessment(bp).level!=="ok")followups.unshift({level:bpAssessment(bp).level,title:"ความดัน",text:`${bp.value}/${bp.value2} mmHg`});
+  const dataParts=[weights.length>0,bmi!==null,bp!==undefined,db.records.some(r=>r.type==="lab"),logs.length>0].filter(Boolean).length;
+  $("#coachDataState").textContent=dataParts>=4?"พร้อม":dataParts>=2?"บางส่วน":"เริ่มต้น";$("#coachDataNote").textContent=`มีข้อมูล ${dataParts}/5 กลุ่มหลัก`;
+  $("#coachWeightTrend").textContent=t30.delta==null?"—":t30.label;$("#coachWeightNote").textContent=t30.count>=2?`${t30.count} ค่าใน 30 วัน`:"ต้องมีอย่างน้อย 2 ค่าใน 30 วัน";
+  $("#coachAdherence").textContent=adh.pct==null?"—":`${adh.pct}%`;$("#coachFollowups").textContent=String(followups.length);
+  let headline="เริ่มจากเก็บข้อมูลให้ต่อเนื่อง";
+  if(followups.some(x=>["danger","urgent","consult"].includes(x.level)))headline="มีข้อมูลสำคัญที่ควรประเมินก่อนเร่งลดน้ำหนัก";
+  else if(t30.delta!=null&&t30.delta<-.2)headline="แนวโน้มน้ำหนักกำลังลดลง — รักษาความสม่ำเสมอ";
+  else if(bmi&&bmi.bmi>=25)headline="โฟกัสการลดน้ำหนักแบบค่อยเป็นค่อยไปและดูแลเมตาบอลิก";
+  else if(dataParts>=4)headline="ข้อมูลพร้อมสำหรับติดตามสุขภาพแบบองค์รวม";
+  $("#coachHeadline").textContent=headline;
+  $("#coachSummary").textContent=`วิเคราะห์จากข้อมูล ${db.records.length} รายการ และบันทึกพฤติกรรม ${logs.length} วัน โดยดูแนวโน้มหลายวันแทนค่าครั้งเดียว`;
+  const today=[];
+  if(!goal.targetWeight)today.push({level:"info",title:"ตั้งเป้าหมายน้ำหนัก",text:"กำหนดเป้าหมายและอัตราประมาณ 0.25–0.5 kg/สัปดาห์ก่อนเริ่มติดตาม",evidence:"ยังไม่มีเป้าหมายใน Weight Management"});
+  if(last&&goal.protein&&Number(last.protein)<Number(goal.protein))today.push({level:"watch",title:"เติมโปรตีนให้ใกล้เป้าหมาย",text:`ตั้งเป้า ${goal.protein} g/วัน โดยกระจายตามมื้อและเลือกแหล่งที่เหมาะกับโรคประจำตัว`,evidence:`ล่าสุด ${last.protein||0} g`});
+  if(last&&goal.steps&&Number(last.steps)<Number(goal.steps))today.push({level:"info",title:"เพิ่มการเคลื่อนไหวแบบไม่กดเข่า",text:"แบ่งกิจกรรมเป็นช่วงสั้น ๆ เลือกเดินราบ ว่ายน้ำ หรือจักรยานอยู่กับที่ตามอาการ",evidence:`ล่าสุด ${last.steps||0} จากเป้าหมาย ${goal.steps} ก้าว`});
+  if(bp&&bpAssessment(bp).level==="warn")today.push({level:"watch",title:"วัดความดันซ้ำอย่างเป็นระบบ",text:"พักก่อนวัดและเก็บเช้า–เย็นเพื่อดูค่าเฉลี่ยหลายวัน",evidence:`ล่าสุด ${bp.value}/${bp.value2} mmHg`});
+  if(!last||Date.now()-new Date(last.date).getTime()>3*86400000)today.push({level:"info",title:"บันทึกข้อมูลวันนี้",text:"เพิ่มน้ำหนักหรือรอบเอว พร้อมอาหารและกิจกรรมอย่างน้อยหนึ่งรายการ",evidence:"ไม่มี body log ใน 3 วันที่ผ่านมา"});
+  if(!today.length)today.push({level:"ok",title:"ทำแผนเดิมต่ออย่างสม่ำเสมอ",text:"คงเป้าหมายอาหาร โปรตีน ก้าว และกิจกรรมไว้ แล้วทบทวนแนวโน้มอีก 7 วัน",evidence:"ข้อมูลล่าสุดอยู่ใกล้เป้าหมายที่ตั้งไว้"});
+  $("#coachToday").innerHTML=today.slice(0,4).map(coachItem).join("");
+  const evidence=[];
+  if(bmi)evidence.push({level:bmi.level,title:`BMI ${bmi.bmi.toFixed(1)} • ${bmi.label}`,text:`คำนวณจาก ${bmi.kg} kg และ ${bmi.cm} cm`,evidence:`น้ำหนัก ${fmtDate(bmi.weightDate)} • ส่วนสูง ${fmtDate(bmi.heightDate)}`});
+  if(last?.waist)evidence.push({level:"info",title:`รอบเอวล่าสุด ${last.waist} cm`,text:"ใช้ติดตามแนวโน้มร่วมกับน้ำหนัก ไม่ใช้วินิจฉัยเพียงค่าเดียว",evidence:new Date(last.date).toLocaleDateString("th-TH")});
+  if(bp)evidence.push({level:bpAssessment(bp).level,title:`ความดัน ${bp.value}/${bp.value2} mmHg`,text:bpAssessment(bp).label,evidence:fmtDate(bp.date)});
+  evidence.push(...labFindings.slice(0,3).map(x=>({...x,evidence:"ผลตรวจล่าสุดที่บันทึกในแอป"})));
+  $("#coachEvidence").innerHTML=evidence.length?evidence.map(coachItem).join(""):coachItem({level:"info",title:"ยังไม่มีหลักฐานเพียงพอ",text:"เพิ่มน้ำหนัก ส่วนสูง ความดัน และผลแล็บเพื่อให้คำแนะนำเฉพาะขึ้น"});
+  $("#coachTrends").innerHTML=[t7,t30,t90].map(t=>`<div class="coach-trend-card"><span>${t.days} วัน</span><b>${esc(t.label)}</b><small>${t.count} ค่าน้ำหนัก</small></div>`).join("");
+  const safety=[];
+  if(followups.length)safety.push(...followups.slice(0,4).map(x=>({level:x.level==="watch"?"watch":["consult","urgent"].includes(x.level)?"danger":x.level,title:x.title,text:x.text,evidence:"Medical Analysis Engine"})));
+  if((db.medications||[]).length)safety.push({level:"info",title:"อย่าหยุดหรือปรับยาเอง",text:"ใช้คำเตือนใน Medication Safety และยืนยันกับแพทย์หรือเภสัชกร",evidence:`มียา ${(db.medications||[]).length} รายการ`});
+  if(!safety.length)safety.push({level:"ok",title:"ไม่พบสัญญาณเร่งด่วนจากข้อมูลที่มี",text:"ผลนี้ขึ้นกับข้อมูลที่บันทึก หากมีอาการผิดปกติควรขอคำแนะนำจากบุคลากรสุขภาพ",evidence:"ข้อมูลปัจจุบันในแอป"});
+  $("#coachSafety").innerHTML=safety.map(coachItem).join("");
+}
+const _v92RenderAll=renderAll;renderAll=function(){_v92RenderAll();renderHealthCoach()};
+if($("#refreshCoachBtn"))$("#refreshCoachBtn").onclick=renderHealthCoach;
+renderHealthCoach();
+console.info("Personal Healthcare v9.2 Integrated AI Health Coach loaded");
+
+/* ================= v9.3 Accuracy & Trend Engine ================= */
+function datedWeights(){return coachWeights()}
+function weightWindow(days){const rows=datedWeights().filter(x=>x.date>=new Date(Date.now()-days*86400000));if(!rows.length)return {days,rows,avg:null,delta:null,from:null,to:null};const avg=rows.reduce((s,x)=>s+x.value,0)/rows.length,delta=rows.length>1?rows.at(-1).value-rows[0].value:null;return {days,rows,avg,delta,from:rows[0].date,to:rows.at(-1).date}}
+function accuracyFindings(){
+  const rows=datedWeights(),out=[];
+  const raw=db.records.filter(r=>r.type==="weight"&&Number.isFinite(Number(r.value))).length;
+  if(raw>rows.length)out.push({level:"watch",title:"รวมค่าน้ำหนักซ้ำในวันเดียว",text:`พบ ${raw} รายการ ระบบใช้ค่าล่าสุดวันละ 1 ค่า เหลือ ${rows.length} วันสำหรับแนวโน้ม`});
+  if(rows.length<3)out.push({level:"watch",title:"ข้อมูลแนวโน้มยังน้อย",text:"ควรมีอย่างน้อย 3 วัน และเหมาะกว่าหากมี 7 วันภายใต้เงื่อนไขใกล้เคียงกัน"});
+  if(rows.length>1){const d=rows.at(-1).value-rows.at(-2).value;if(Math.abs(d)>=2)out.push({level:"danger",title:`เปลี่ยน ${d>0?"+":""}${d.toFixed(1)} kg ระหว่างวันล่าสุด`,text:"ทำเครื่องหมายเป็นการเปลี่ยนแปลงระยะสั้น ควรตรวจเวลา เครื่องชั่ง เสื้อผ้า อาหารและภาวะคั่งน้ำก่อนตีความเป็นไขมัน"})}
+  if(!out.length)out.push({level:"good",title:"ข้อมูลพร้อมดูแนวโน้ม",text:"มีข้อมูลหลายวันที่แยกตามวันแล้ว ใช้ค่าเฉลี่ย 7 วันประกอบการตัดสินใจ"});
+  return out;
+}
+
+/* ================= v9.4 Home Blood Pressure ================= */
+function bpSessionAvg(x){return {sys:(Number(x.sys1)+Number(x.sys2))/2,dia:(Number(x.dia1)+Number(x.dia2))/2}}
+function renderBpSessions(){
+  if(!$("#bpAvgAll"))return;const a=[...(db.bpSessions||[])].sort((x,y)=>new Date(x.date)-new Date(y.date)),av=a.map(bpSessionAvg),cut=Date.now()-7*86400000,a7=a.filter(x=>new Date(x.date).getTime()>=cut),v7=a7.map(bpSessionAvg),mean=x=>x.length?`${Math.round(x.reduce((s,v)=>s+v.sys,0)/x.length)}/${Math.round(x.reduce((s,v)=>s+v.dia,0)/x.length)}`:"—";
+  $("#bpAvgAll").textContent=mean(av);$("#bpAvg7").textContent=mean(v7);$("#bpDays").textContent=new Set(a.map(x=>x.date)).size;$("#bpComplete").textContent=a.length;const all=av.length?{value:av.reduce((s,v)=>s+v.sys,0)/av.length,value2:av.reduce((s,v)=>s+v.dia,0)/av.length}:null;$("#bpAvgState").textContent=all?bpAssessment(all).label:"ยังไม่มีชุดวัด";
+  $("#bpProtocol").innerHTML=[{title:"ก่อนวัด",text:"งดคาเฟอีน บุหรี่และการออกกำลัง 30 นาทีถ้าทำได้ เข้าห้องน้ำและพักเงียบ 5 นาที"},{title:"ระหว่างวัด",text:"นั่งพิงพนัก เท้าวางพื้น ไม่ไขว่ห้าง แขนระดับหัวใจ ไม่พูด และใช้ผ้าพันแขนขนาดเหมาะสม"},{title:"การติดตาม",text:"บันทึกเช้าและเย็นอย่างน้อย 4 วัน เหมาะที่สุด 7 วัน แล้วใช้ค่าเฉลี่ยร่วมกับบุคลากรสุขภาพ"}].map(x=>`<div class="item"><div><strong>${x.title}</strong><small>${x.text}</small></div></div>`).join("");
+  $("#bpSessionHistory").innerHTML=a.length?a.slice().reverse().map(x=>{const m=bpSessionAvg(x);return `<tr><td>${esc(x.date)}</td><td>${x.period==="morning"?"เช้า":"เย็น"}</td><td>${x.sys1}/${x.dia1}</td><td>${x.sys2}/${x.dia2}</td><td>${Math.round(m.sys)}/${Math.round(m.dia)}</td><td><button class="btn mini bp-del" data-id="${x.id}">ลบ</button></td></tr>`}).join(""):`<tr><td colspan="6" class="muted">ยังไม่มีชุดวัด</td></tr>`;$$('.bp-del').forEach(b=>b.onclick=()=>{if(confirm("ลบชุดวัดนี้?")){db.bpSessions=db.bpSessions.filter(x=>x.id!==b.dataset.id);save()}})
+}
+if($("#bpSessionForm"))$("#bpSessionForm").onsubmit=e=>{e.preventDefault();const x={id:uid(),date:$("#bpSessionDate").value,period:$("#bpPeriod").value,sys1:Number($("#bpSys1").value),dia1:Number($("#bpDia1").value),sys2:Number($("#bpSys2").value),dia2:Number($("#bpDia2").value),rested:$("#bpRested").checked,created_at:new Date().toISOString()},m=bpSessionAvg(x);db.bpSessions.push(x);db.records.push({id:uid(),date:new Date(x.date+(x.period==="morning"?"T08:00:00":"T20:00:00")).toISOString(),type:"blood_pressure",value:Number(m.sys.toFixed(1)),value2:Number(m.dia.toFixed(1)),unit:"mmHg",note:`ค่าเฉลี่ยจากการวัด 2 ครั้ง (${x.period==="morning"?"เช้า":"เย็น"}) v9.4`,created_at:new Date().toISOString(),updated_at:new Date().toISOString()});save();e.target.reset();$("#bpSessionDate").value=new Date().toISOString().slice(0,10)};
+
+/* ================= v9.5 65 kg Plan ================= */
+function renderWeightPlan(){
+  if(!$("#planCurrent"))return;const rows=datedWeights(),cur=rows.at(-1)?.value,goal=db.weightGoal||{},target=Number(goal.targetWeight||65),weekly=Number(goal.weekly||.5),rem=Number.isFinite(cur)?cur-target:null,weeks=rem>0&&weekly>0?Math.ceil(rem/weekly):0,eta=new Date(Date.now()+weeks*7*86400000),w7=weightWindow(7);
+  $("#planCurrent").textContent=Number.isFinite(cur)?`${cur.toFixed(1)} kg`:"—";$("#planTarget").textContent=`${target} kg`;$("#planRemaining").textContent=rem==null?"ยังไม่มีน้ำหนัก":rem>0?`เหลือ ${rem.toFixed(1)} kg`:"ถึงเป้าหมายแล้ว";$("#planEta").textContent=rem>0?`≈ ${weeks} สัปดาห์`:rem==null?"—":"ถึงเป้าหมาย";$("#planEtaDate").textContent=rem>0?`ประมาณ ${eta.toLocaleDateString("th-TH",{month:"short",year:"numeric"})} หากเฉลี่ย ${weekly} kg/สัปดาห์`:"ขึ้นกับแนวโน้มจริง";$("#planAvg7").textContent=w7.avg==null?"—":`${w7.avg.toFixed(1)} kg`;
+  const ids={planTargetInput:target,planWeeklyInput:weekly,planCaloriesInput:goal.calories||"",planProteinInput:goal.protein||"",planStepsInput:goal.steps||""};for(const [id,v] of Object.entries(ids))if(document.activeElement!==$("#"+id))$("#"+id).value=v;
+  const last=(db.bodyLogs||[]).slice().sort((a,b)=>new Date(a.date)-new Date(b.date)).at(-1),plan=[{level:"info",title:"น้ำหนัก",text:"ชั่งตอนเช้าภายใต้เงื่อนไขเดิม 3–7 วัน/สัปดาห์ และดูค่าเฉลี่ย 7 วัน"},{level:"info",title:"อาหาร",text:goal.calories?`ใช้เป้าหมาย ${goal.calories} kcal/วันเป็นจุดเริ่มต้น และปรับตามแนวโน้ม/ความหิว/คำแนะนำผู้เชี่ยวชาญ`:"ยังไม่ได้ตั้งเป้าแคลอรี จึงไม่เดาตัวเลขเฉพาะบุคคล"},{level:"info",title:"โปรตีน",text:goal.protein?`เป้าหมาย ${goal.protein} g/วัน แบ่งตามมื้อและปรับหากมีโรคไตหรือข้อจำกัดอาหาร`:"ตั้งเป้าโปรตีนร่วมกับบุคลากรสุขภาพหากมีโรคไตหรือตับ"},{level:"info",title:"กิจกรรมที่เป็นมิตรกับเข่า",text:goal.steps?`ค่อย ๆ ไปสู่ ${goal.steps} ก้าว/วัน พร้อมเวทส่วนบน/แกนกลางและกิจกรรมแรงกระแทกต่ำ`:"แบ่งเดินสั้น ๆ หรือเลือกว่ายน้ำ/จักรยานอยู่กับที่ตามอาการเข่า"}];if(last&&goal.steps&&Number(last.steps)<goal.steps)plan.unshift({level:"watch",title:"ก้าวล่าสุดต่ำกว่าเป้าหมาย",text:`ล่าสุด ${last.steps||0} จากเป้าหมาย ${goal.steps} ก้าว`});$("#weeklyPlan").innerHTML=plan.map(coachItem).join("");
+  $("#accuracySummary").innerHTML=accuracyFindings().map(x=>`<div class="item accuracy-${x.level}"><div><strong>${esc(x.title)}</strong><small>${esc(x.text)}</small></div></div>`).join("");$("#planTrends").innerHTML=[7,30,90].map(d=>{const w=weightWindow(d),range=w.from?`${w.from.toLocaleDateString("th-TH")}–${w.to.toLocaleDateString("th-TH")}`:"ยังไม่มีข้อมูล";return `<div class="coach-trend-card"><span>${d} วัน</span><b>${w.avg==null?"—":w.avg.toFixed(1)+" kg"}</b><small>เฉลี่ย ${w.rows.length} วัน • ${range}</small></div>`}).join("");
+}
+if($("#planForm"))$("#planForm").onsubmit=e=>{e.preventDefault();db.weightGoal={...db.weightGoal,targetWeight:Number($("#planTargetInput").value),weekly:Number($("#planWeeklyInput").value),calories:numOrText($("#planCaloriesInput").value),protein:numOrText($("#planProteinInput").value),steps:numOrText($("#planStepsInput").value),updated_at:new Date().toISOString()};save()};
+
+/* ================= v9.6 Auth, Sync, Backup ================= */
+const AUTH_KEY="ph_v96_auth";function getAuth(){try{return JSON.parse(localStorage.getItem(AUTH_KEY)||"null")}catch{return null}}function authToken(){return getAuth()?.access_token||getCfg().key}
+async function authRequest(path,body){const c=getCfg();if(!c.url||!c.key)throw new Error("กรอก Project URL และ Anon Key ก่อน");const r=await fetch(`${c.url}/auth/v1/${path}`,{method:"POST",headers:{apikey:c.key,"Content-Type":"application/json"},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw new Error(j.msg||j.error_description||j.message||`HTTP ${r.status}`);return j}
+async function accountAction(kind){const email=$("#accountEmail").value.trim(),password=$("#accountPassword").value,status=$("#accountStatus");status.textContent="กำลังดำเนินการ…";try{const a=await authRequest(kind==="signup"?"signup":"token?grant_type=password",{email,password});if(a.access_token)localStorage.setItem(AUTH_KEY,JSON.stringify(a));status.textContent=a.access_token?`เข้าสู่ระบบแล้ว: ${a.user?.email||email}`:"สมัครแล้ว โปรดยืนยันอีเมลก่อนเข้าสู่ระบบ";syncBadge()}catch(e){status.textContent="ไม่สำเร็จ: "+e.message}}
+if($("#signInBtn"))$("#signInBtn").onclick=()=>accountAction("signin");if($("#signUpBtn"))$("#signUpBtn").onclick=()=>accountAction("signup");if($("#signOutBtn"))$("#signOutBtn").onclick=()=>{localStorage.removeItem(AUTH_KEY);$("#accountStatus").textContent="ออกจากระบบแล้ว";syncBadge()};
+async function snapshotRequest(method,body){const c=getCfg(),a=getAuth();if(!c.url||!c.key||!a?.access_token)throw new Error("ต้องตั้งค่า Supabase และเข้าสู่ระบบก่อน");const r=await fetch(`${c.url}/rest/v1/app_snapshots?user_id=eq.${encodeURIComponent(a.user.id)}`,{method,headers:{apikey:c.key,Authorization:`Bearer ${a.access_token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=representation"},body:body?JSON.stringify(body):undefined});if(!r.ok)throw new Error(`${r.status} ${await r.text()}`);return r.status===204?[]:r.json()}
+if($("#syncPushBtn"))$("#syncPushBtn").onclick=async()=>{const s=$("#syncStatus"),a=getAuth();s.textContent="กำลังส่งข้อมูล…";try{await snapshotRequest("POST",{user_id:a.user.id,payload:db,app_version:"9.6",updated_at:new Date().toISOString()});s.textContent=`ซิงก์ขึ้น Cloud แล้ว • ${db.records.length} records`}catch(e){s.textContent="ซิงก์ไม่สำเร็จ: "+e.message}};
+if($("#syncPullBtn"))$("#syncPullBtn").onclick=async()=>{const s=$("#syncStatus");s.textContent="กำลังดึงข้อมูล…";try{const rows=await snapshotRequest("GET");if(!rows.length)throw new Error("ยังไม่มีข้อมูลสำรองบน Cloud");const remote=rows[0].payload;if(!remote||!Array.isArray(remote.records))throw new Error("รูปแบบข้อมูล Cloud ไม่ถูกต้อง");if(confirm(`แทนข้อมูลในเครื่องด้วย Cloud ${remote.records.length} records?`)){db={...blank,...remote};save();s.textContent="ดึงข้อมูลจาก Cloud สำเร็จ"}}catch(e){s.textContent="ดึงไม่สำเร็จ: "+e.message}};
+if($("#restoreJsonInput"))$("#restoreJsonInput").onchange=async e=>{const s=$("#restoreStatus");try{const j=JSON.parse(await e.target.files[0].text());if(!Array.isArray(j.records))throw new Error("ไม่พบ records ในไฟล์");if(confirm(`Restore ${j.records.length} records และแทนข้อมูลในเครื่อง?`)){db={...blank,...j};save();s.textContent="Restore สำเร็จ"}}catch(err){s.textContent="Restore ไม่สำเร็จ: "+err.message}e.target.value=""};
+const _v96RenderAll=renderAll;renderAll=function(){_v96RenderAll();renderBpSessions();renderWeightPlan();const a=getAuth();if($("#accountStatus")&&a?.user)$("#accountStatus").textContent=`เข้าสู่ระบบแล้ว: ${a.user.email||a.user.id}`};
+$("#bpSessionDate").value=new Date().toISOString().slice(0,10);renderBpSessions();renderWeightPlan();
+console.info("Personal Healthcare v9.3-v9.6 modules loaded");
