@@ -138,6 +138,16 @@ input[type="date"],input[type="datetime-local"],input[type="number"],select.inpu
   #quickUpdateForm .quick-update-action,#bodyLogForm .full,#bpSessionForm .full{grid-column:1/-1!important}
 }
 
+/* v9.8.1 Medication Vision AI */
+.med-ai-hero{margin-bottom:14px;background:linear-gradient(135deg,#f4fbf8,#eef6ff)}
+.med-ai-hero h2{margin:8px 0 5px;font-size:26px}.med-ai-hero>div>p{margin:0 0 12px;line-height:1.55;color:var(--muted)}
+.med-ai-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}.med-ai-steps span{border:1px solid #cde3db;background:#fff;border-radius:999px;padding:8px 10px;text-align:center;font-size:12px;font-weight:800;color:#0b6b57}
+.med-ai-grid,.med-lists-grid{margin-bottom:14px}.med-camera-actions,.med-ai-actions{display:flex;gap:8px;flex-wrap:wrap}.med-ai-actions{margin-top:12px;justify-content:flex-end}
+.med-ai-review-list{display:grid;gap:12px;margin-top:12px}.med-review-card{border:1px solid var(--line);border-radius:14px;padding:13px;background:#fbfdfc}.med-review-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}.med-review-grid{align-items:start}.med-review-grid small{display:block;margin-top:4px;line-height:1.35;color:var(--muted)}.med-confirm-note{margin-top:12px}
+.medication-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start;gap:12px}.med-thumb{width:76px;height:76px;object-fit:cover;border:1px solid var(--line);border-radius:10px;background:#f3f5f4}.medication-main{min-width:0}.medication-main strong,.medication-main small{display:block}.medication-main small{margin-top:4px;line-height:1.4}.medication-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.med-time-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}.med-time-chips span{font-size:11px;font-weight:800;color:#0b6b57;background:#e8f6f1;border:1px solid #cae8dd;border-radius:999px;padding:3px 8px}.med-reminder{display:flex;justify-content:space-between;align-items:center;gap:10px}.med-reminder small{display:block;margin-top:3px}
+@media(max-width:700px){.med-ai-steps{grid-template-columns:1fr 1fr}.med-camera-actions .btn,.med-ai-actions .btn{flex:1}.medication-item{grid-template-columns:auto minmax(0,1fr)}.medication-actions{grid-column:1/-1}.med-thumb{width:64px;height:64px}.med-reminder{align-items:flex-start}}
+@media(max-width:420px){.med-ai-steps{grid-template-columns:1fr}.med-camera-actions,.med-ai-actions{flex-direction:column}.med-camera-actions .btn,.med-ai-actions .btn{width:100%}.medication-item{grid-template-columns:1fr}.med-thumb{width:100%;height:150px}.medication-actions{justify-content:stretch}.medication-actions .btn{flex:1}}
+
 /* v9.7.2 equal-height iPad date controls */
 #quickDate,#wmDate,#bpSessionDate{
   -webkit-appearance:none!important;

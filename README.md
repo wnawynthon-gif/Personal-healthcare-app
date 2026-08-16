@@ -1,6 +1,17 @@
-# Personal Healthcare v9.6 — Accuracy, BP, 65 kg Plan & Secure Sync
+# Personal Healthcare v9.8.1 — Medication Photo AI, Reminders & Secure Sync
 
-v9.6 รวมการพัฒนา v9.3–v9.6 บนฐานเดิม: Accuracy & Trend Engine, Home Blood Pressure, แผนเป้าหมาย 65 kg, Supabase Auth/Cloud snapshot และ Backup/Restore โดยคงข้อมูลเดิมและการแก้หน้าจอ iPad ไว้
+v9.8.1 เพิ่มขั้นตอนถ่ายภาพฉลากยา → AI อ่านข้อมูล → ตรวจแก้ → สร้างเวลาเตือนหลายเวลา โดยคง Accuracy & Trend Engine, Home Blood Pressure, แผนเป้าหมาย 65 kg, Supabase Auth/Cloud snapshot, Backup/Restore และข้อมูลเดิมทั้งหมดไว้
+
+## Medication Photo AI v9.8.1
+
+1. เปิดหน้า `ยา & เตือน` แล้วถ่ายภาพฉลากหรือเลือกรูปจาก Photos
+2. กด `ให้ AI อ่านฉลากยา`
+3. ตรวจชื่อยา ชื่อสามัญ ความแรง วิธีใช้ เวลา วันเริ่ม และวันสิ้นสุดเทียบกับฉลากจริง
+4. กด `ยืนยันและสร้างรายการเตือน`
+
+AI เป็นตัวช่วยอ่านฉลากเท่านั้น ผู้ใช้ต้องยืนยันก่อนบันทึก และไม่ควรเริ่ม หยุด หรือปรับยาจากผล AI โดยไม่ยืนยันกับแพทย์หรือเภสัชกร
+
+ก่อนใช้งานครั้งแรก ต้อง deploy ไฟล์ `supabase/functions/analyze-health-report/index.ts` ทับ Edge Function ชื่อเดิมหนึ่งครั้ง ดู `DEPLOY_AI_V9.8.1.md` ไม่ต้องรัน SQL ใหม่
 
 เวอร์ชันนี้สร้างใหม่ให้ Import เสถียรกว่าเดิม โดยไม่ผูกการ Save กับการตรวจไฟล์ทั้งก้อน
 

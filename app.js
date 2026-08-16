@@ -1,13 +1,15 @@
 
 const $=(s,root=document)=>root.querySelector(s); const $$=(s,root=document)=>[...root.querySelectorAll(s)];
 const KEY="ph_v8_data", CFG="ph_v8_cfg", AUTH_KEY="ph_v96_auth"; const FILE_DB="ph_v81_files", FILE_STORE="documents";
-const blank={records:[],medications:[],documents:[],weightGoal:{},bodyLogs:[],bpSessions:[]};
+const blank={records:[],medications:[],medicationImages:[],documents:[],weightGoal:{},bodyLogs:[],bpSessions:[],syncMeta:{localUpdatedAt:null,lastCloudUpdatedAt:null}};
 let db=load(), importState={raw:[],headers:[],valid:[],invalid:[],duplicates:[]};
 
 function getAuth(){try{return JSON.parse(localStorage.getItem(AUTH_KEY)||"null")}catch{return null}}
 function accountDataKey(){const id=getAuth()?.user?.id;return id?`${KEY}:user:${id}`:`${KEY}:guest`}
-function load(){try{return {...blank,...JSON.parse(localStorage.getItem(accountDataKey())||"{}")}}catch{return structuredClone(blank)}}
-function save(){localStorage.setItem(accountDataKey(),JSON.stringify(db));renderAll();syncBadge();scheduleCloudSync()}
+function normalizeDb(value){const x=value&&typeof value==="object"?value:{};return {...structuredClone(blank),...x,syncMeta:{...blank.syncMeta,...(x.syncMeta||{})}}}
+function load(){try{return normalizeDb(JSON.parse(localStorage.getItem(accountDataKey())||"{}"))}catch{return structuredClone(blank)}}
+function persistDb({markChanged=true,cloud=true,storageKey=accountDataKey()}={}){if(markChanged)db.syncMeta={...(db.syncMeta||{}),localUpdatedAt:new Date().toISOString()};localStorage.setItem(storageKey,JSON.stringify(db));renderAll();syncBadge();if(cloud)scheduleCloudSync()}
+function save(){persistDb()}
 function uid(){return crypto?.randomUUID?.() || "id-"+Date.now()+"-"+Math.random().toString(16).slice(2)}
 function esc(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m]))}
 function fmtDate(v){if(!v)return "—";const d=new Date(v);return isNaN(d)?String(v):d.toLocaleString("th-TH",{year:"2-digit",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}
@@ -53,7 +55,7 @@ function go(view){
     plan:["แผน 65 kg","เป้าหมายรายสัปดาห์ แนวโน้มที่แม่นขึ้น และแผนลงมือทำ"],
     records:["ข้อมูลสุขภาพ","บันทึกและจัดการข้อมูลสุขภาพแบบโครงสร้าง"],
     import:["นำเข้าข้อมูล","Import Center v8.0 — ตรวจและแก้ไขก่อนบันทึก"],
-    meds:["ยา & เตือน","ช่วยจัดรายการยาและเวลาเตือน"],
+    meds:["ยา & เตือน","ถ่ายฉลากยา → AI อ่าน → ตรวจแก้ → สร้างเวลาเตือน"],
     ai:["AI วิเคราะห์ผลตรวจ","ถ่ายรูปผลตรวจ → AI วิเคราะห์ → Validation → Confirm → Save"],
     files:["Document Inbox","เก็บ PDF และรูปเอกสารสุขภาพ"],
     settings:["ตั้งค่า","การซิงก์และการจัดการข้อมูล"]
@@ -420,13 +422,93 @@ $("#pasteForm").onsubmit=e=>{e.preventDefault();setImportData(parseCSV($("#paste
 $("#downloadTemplate").onclick=()=>downloadText("health-import-template.csv","date,type,value,value2,unit,note\n2026-08-11T08:00:00,blood_pressure,128,82,mmHg,morning\n2026-08-11T08:05:00,weight,80,,kg,\n2026-08-11T08:06:00,height,170,,cm,\n");
 function downloadText(name,text,type="text/plain"){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 
-function renderMeds(){
-  $("#medList").innerHTML=db.medications.length?db.medications.map(m=>`<div class="item"><strong>${esc(m.name)}</strong><small>${esc(m.dose||"")} ${m.time?`• ${esc(m.time)}`:""} ${m.note?`• ${esc(m.note)}`:""}</small><div><button class="btn mini del-med" data-id="${m.id}">ลบ</button></div></div>`).join(""):`<div class="item"><small>ยังไม่มีรายการยา</small></div>`;
-  $("#reminderList").innerHTML=db.medications.filter(m=>m.time).length?db.medications.filter(m=>m.time).sort((a,b)=>a.time.localeCompare(b.time)).map(m=>`<div class="item"><strong>${esc(m.time)} • ${esc(m.name)}</strong><small>${esc(m.dose||"")}</small></div>`).join(""):`<div class="item"><small>ยังไม่มีเวลาเตือน</small></div>`;
-  $$(".del-med").forEach(b=>b.onclick=()=>{db.medications=db.medications.filter(m=>m.id!==b.dataset.id);save()});
+function cleanMedTimes(value){const raw=Array.isArray(value)?value:String(value||"").split(/[,\s]+/);return [...new Set(raw.map(x=>String(x).trim()).filter(x=>/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(x)))].sort()}
+function medNameKey(value){return String(value||"").toLowerCase().replace(/\([^)]*\)/g," ").replace(/\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|%|iu|units?)\b/gi," ").replace(/\b(?:tab(?:let)?s?|cap(?:sule)?s?)\b/gi," ").replace(/[^a-z0-9ก-๙]/g,"")}
+function medTimes(m){const times=cleanMedTimes(m?.times);return times.length?times:cleanMedTimes(m?.time)}
+function localDateKey(d=new Date()){return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")}
+function medActiveOn(m,dateKey=localDateKey()){return (!m.startDate||dateKey>=m.startDate)&&(!m.endDate||dateKey<=m.endDate)&&m.active!==false}
+function medicationImage(id){return (db.medicationImages||[]).find(x=>x.id===id)}
+let medNotificationTimers=[];
+function scheduleMedicationAlerts(){
+  medNotificationTimers.forEach(clearTimeout);medNotificationTimers=[];
+  if(!("Notification" in window)||Notification.permission!=="granted")return;
+  const now=new Date();
+  for(const m of db.medications||[])for(const time of medTimes(m)){
+    const [h,min]=time.split(":").map(Number),when=new Date(now);when.setHours(h,min,0,0);if(when<=now)when.setDate(when.getDate()+1);
+    if(!medActiveOn(m,localDateKey(when)))continue;
+    const delay=when-now;if(delay>86400000)continue;
+    medNotificationTimers.push(setTimeout(()=>{try{new Notification(`ถึงเวลากินยา • ${m.name}`,{body:[m.strength,m.dose,time].filter(Boolean).join(" • "),tag:`med-${m.id}-${time}`})}catch{}setTimeout(scheduleMedicationAlerts,1000)},delay));
+  }
 }
-$("#addMedBtn").onclick=()=>{$("#medForm").reset();$("#medDialog").showModal()};
-$("#medForm").onsubmit=e=>{e.preventDefault();db.medications.push({id:uid(),name:$("#medName").value.trim(),dose:$("#medDose").value.trim(),time:$("#medTime").value,note:$("#medNote").value.trim(),created_at:new Date().toISOString()});save();$("#medDialog").close()}
+function renderMeds(){
+  db.medicationImages=Array.isArray(db.medicationImages)?db.medicationImages:[];
+  const meds=[...(db.medications||[])].sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  $("#medList").innerHTML=meds.length?meds.map(m=>{const times=medTimes(m),img=medicationImage(m.imageId),period=[m.startDate,m.endDate].filter(Boolean).join(" → ");return `<div class="item medication-item">
+    ${img?.thumbnail?`<img class="med-thumb" src="${esc(img.thumbnail)}" alt="ภาพฉลากยา">`:""}
+    <div class="medication-main"><strong>${esc(m.name)}${m.strength?` • ${esc(m.strength)}`:""}</strong><small>${m.genericName?esc(m.genericName)+" • ":""}${esc(m.dose||"")}</small>${times.length?`<div class="med-time-chips">${times.map(t=>`<span>${esc(t)}</span>`).join("")}</div>`:""}${period?`<small>ช่วงวันที่ ${esc(period)}</small>`:""}${m.note?`<small>${esc(m.note)}</small>`:""}</div>
+    <div class="medication-actions"><button class="btn mini edit-med" data-id="${m.id}">แก้ไข</button><button class="btn mini del-med" data-id="${m.id}">ลบ</button></div>
+  </div>`}).join(""):`<div class="item"><small>ยังไม่มีรายการยา • ถ่ายภาพฉลากด้านบนหรือเพิ่มยาเอง</small></div>`;
+  const reminders=meds.filter(m=>medActiveOn(m)).flatMap(m=>medTimes(m).map(time=>({m,time}))).sort((a,b)=>a.time.localeCompare(b.time));
+  $("#reminderList").innerHTML=reminders.length?reminders.map(({m,time})=>`<div class="item med-reminder"><div><strong>${esc(time)} • ${esc(m.name)}</strong><small>${[m.strength,m.dose].filter(Boolean).map(esc).join(" • ")}</small></div><span class="status-badge normal">วันนี้</span></div>`).join(""):`<div class="item"><small>วันนี้ยังไม่มีเวลาเตือน</small></div>`;
+  $$(".edit-med").forEach(b=>b.onclick=()=>openMedDialog(db.medications.find(m=>m.id===b.dataset.id)));
+  $$(".del-med").forEach(b=>b.onclick=()=>{const id=b.dataset.id;if(!confirm("ลบรายการยานี้และเวลาเตือน?"))return;const imageId=db.medications.find(m=>m.id===id)?.imageId;db.medications=db.medications.filter(m=>m.id!==id);if(imageId&&!db.medications.some(m=>m.imageId===imageId))db.medicationImages=db.medicationImages.filter(x=>x.id!==imageId);save()});
+  const status=$("#medNotificationStatus");if(status){if(!("Notification" in window))status.textContent="อุปกรณ์/เบราว์เซอร์นี้ไม่รองรับ Notification";else status.textContent=Notification.permission==="granted"?"เปิดการแจ้งเตือนแล้ว • ทำงานเมื่อแอปหรือ PWA ยังทำงานอยู่":Notification.permission==="denied"?"การแจ้งเตือนถูกปิดใน Browser Settings":"ยังไม่ได้อนุญาตการแจ้งเตือน"}
+  scheduleMedicationAlerts();
+}
+function openMedDialog(m=null){
+  $("#medForm").reset();$("#medEditId").value=m?.id||"";$("#medDialogTitle").textContent=m?"แก้ไขยา":"เพิ่มยา";
+  $("#medName").value=m?.name||"";$("#medGeneric").value=m?.genericName||"";$("#medStrength").value=m?.strength||"";$("#medDose").value=m?.dose||"";$("#medTimes").value=medTimes(m).join(", ");$("#medStartDate").value=m?.startDate||"";$("#medEndDate").value=m?.endDate||"";$("#medNote").value=m?.note||"";$("#medDialog").showModal();
+}
+$("#addMedBtn").onclick=()=>openMedDialog();
+$("#medForm").onsubmit=e=>{e.preventDefault();const id=$("#medEditId").value,old=db.medications.find(m=>m.id===id),now=new Date().toISOString(),times=cleanMedTimes($("#medTimes").value),next={...(old||{}),id:old?.id||uid(),name:$("#medName").value.trim(),genericName:$("#medGeneric").value.trim(),strength:$("#medStrength").value.trim(),dose:$("#medDose").value.trim(),times,time:times[0]||"",startDate:$("#medStartDate").value,endDate:$("#medEndDate").value,note:$("#medNote").value.trim(),active:true,created_at:old?.created_at||now,updated_at:now};if(old)Object.assign(old,next);else db.medications.push(next);save();$("#medDialog").close()}
+if($("#enableMedNotificationsBtn"))$("#enableMedNotificationsBtn").onclick=async()=>{const s=$("#medNotificationStatus");if(!("Notification" in window)){s.textContent="อุปกรณ์/เบราว์เซอร์นี้ไม่รองรับ Notification";return}try{const p=await Notification.requestPermission();s.textContent=p==="granted"?"เปิดการแจ้งเตือนแล้ว":"ยังไม่ได้รับอนุญาตการแจ้งเตือน";renderMeds()}catch(e){s.textContent="เปิดการแจ้งเตือนไม่สำเร็จ: "+e.message}}
+
+/* ================= v9.8.1 Medication Photo AI ================= */
+let medAiPhotos=[],medAiResult=null;
+function setMedAiProgress(p,text){$("#medAiProgressWrap").hidden=false;$("#medAiProgressBar").style.width=Math.max(0,Math.min(100,p))+"%";$("#medAiProgressText").textContent=text||""}
+async function addMedAiFiles(files){for(const f of files){if(!String(f.type).startsWith("image/")&&!/\.(heic|heif|jpe?g|png|webp)$/i.test(f.name))continue;try{medAiPhotos.push({id:uid(),name:f.name,dataUrl:await fileToJpegDataUrl(f),originalSize:f.size})}catch(e){alert(`${f.name}: ${e.message}\nหากเป็น HEIC ให้ถ่าย Screenshot แล้วเลือกรูปนั้นแทน`)}}renderMedAiPhotos()}
+function renderMedAiPhotos(){const box=$("#medPhotoGrid");box.innerHTML=medAiPhotos.map((p,i)=>`<div class="ai-photo"><img src="${p.dataUrl}" alt="ภาพฉลากยา"><button type="button" data-i="${i}">×</button></div>`).join("");$$("button",box).forEach(b=>b.onclick=()=>{medAiPhotos.splice(Number(b.dataset.i),1);renderMedAiPhotos()});$("#analyzeMedAiBtn").disabled=!medAiPhotos.length}
+function resetMedAi(){medAiResult=null;$("#medAiEmpty").hidden=false;$("#medAiReview").hidden=true;$("#medAiProgressWrap").hidden=true}
+if($("#medCameraInput"))$("#medCameraInput").onchange=e=>{addMedAiFiles([...e.target.files]);e.target.value=""};
+if($("#medGalleryInput"))$("#medGalleryInput").onchange=e=>{addMedAiFiles([...e.target.files]);e.target.value=""};
+if($("#clearMedPhotosBtn"))$("#clearMedPhotosBtn").onclick=()=>{medAiPhotos=[];renderMedAiPhotos();resetMedAi()};
+function defaultMedTimes(n){return ({1:["08:00"],2:["08:00","18:00"],3:["08:00","13:00","18:00"],4:["08:00","12:00","18:00","22:00"]})[Number(n)]||[]}
+function medMealLabel(v){return ({before_food:"ก่อนอาหาร",after_food:"หลังอาหาร",with_food:"พร้อมอาหาร",bedtime:"ก่อนนอน",as_directed:"ตามแพทย์สั่ง",unknown:"ไม่ทราบ"})[v]||"ไม่ทราบ"}
+function addDays(date,days){if(!date||!Number(days))return"";const d=new Date(date+"T12:00:00");if(isNaN(d))return"";d.setDate(d.getDate()+Number(days)-1);return localDateKey(d)}
+async function analyzeMedicationPhotos(){
+  const cfg=getAiCfg(),base=getCfg(),url=cfg.functionUrl||deriveAiFunctionUrl(base.url),key=cfg.anonKey||base.key;
+  if(!url||!key){go("settings");$("#aiConfigStatus").textContent="ต้องตั้งค่า AI Edge Function ก่อนใช้การอ่านฉลากยา";return}
+  if(!medAiPhotos.length)return;$("#analyzeMedAiBtn").disabled=true;setMedAiProgress(15,"กำลังเตรียมภาพฉลากยา...");
+  try{const payload={task:"medication_label",images:medAiPhotos.map((p,i)=>({name:p.name||`medicine-${i+1}.jpg`,data_url:p.dataUrl})),language:"th"};setMedAiProgress(35,"กำลังให้ AI อ่านชื่อยาและวิธีใช้...");
+    const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json",apikey:key,Authorization:`Bearer ${key}`},body:JSON.stringify(payload)}),raw=await res.text();if(!res.ok)throw new Error(`${res.status}: ${raw.slice(0,260)}`);let data;try{data=JSON.parse(raw)}catch{throw new Error("Function ส่งข้อมูลกลับมาไม่ใช่ JSON")}if(data.error)throw new Error(data.error);if(!Array.isArray(data.medications))throw new Error("Edge Function ยังเป็นรุ่นเดิม กรุณา Deploy analyze-health-report จากโฟลเดอร์ v9.8.1");medAiResult=data;setMedAiProgress(90,"กำลังสร้างหน้าตรวจแก้...");renderMedicationAiReview();setMedAiProgress(100,"อ่านเสร็จแล้ว • กรุณาตรวจเทียบฉลากก่อนบันทึก");
+  }catch(e){$("#medAiProgressText").textContent="วิเคราะห์ไม่สำเร็จ: "+e.message;alert("AI อ่านฉลากยาไม่สำเร็จ\n"+e.message)}finally{$("#analyzeMedAiBtn").disabled=!medAiPhotos.length}
+}
+if($("#analyzeMedAiBtn"))$("#analyzeMedAiBtn").onclick=analyzeMedicationPhotos;
+function renderMedicationAiReview(){const r=medAiResult||{},rows=Array.isArray(r.medications)?r.medications:[];$("#medAiEmpty").hidden=true;$("#medAiReview").hidden=false;$("#medAiSummaryTitle").textContent=r.document_title||"ผลอ่านฉลากยา";$("#medAiSummaryText").textContent=r.summary_th||"AI อ่านข้อมูลแล้ว กรุณาตรวจทุกช่อง";
+  const alerts=Array.isArray(r.alerts)?r.alerts:[];$("#medAiAlerts").innerHTML=alerts.length?alerts.map(a=>`<div class="ai-alert ${esc(a.level||"info")}"><strong>${esc(a.title||"จุดที่ต้องตรวจ")}</strong><small>${esc(a.message_th||"")}</small></div>`).join(""):`<div class="notice info">AI ไม่พบข้อความเตือนที่อ่านได้จากฉลาก แต่ยังต้องตรวจเอกสารต้นฉบับ</div>`;
+  $("#medAiReviewList").innerHTML=rows.length?rows.map((m,i)=>{const times=cleanMedTimes(m.times_suggested).length?cleanMedTimes(m.times_suggested):defaultMedTimes(m.frequency_per_day),start=m.start_date||r.document_date||localDateKey(),end=m.end_date||addDays(start,m.duration_days);return `<div class="med-review-card" data-i="${i}">
+    <div class="med-review-head"><label class="checkline"><input class="mai-use" type="checkbox" ${Number(m.confidence)>=.55?"checked":""}><strong>ใช้รายการนี้</strong></label><span class="confidence ${confidenceClass(m.confidence)}">AI ${Math.round((Number(m.confidence)||0)*100)}%</span></div>
+    <div class="form-grid med-review-grid">
+      <label>ชื่อยา/ชื่อการค้า<input class="input mai-name" value="${esc(m.brand_name||m.name||"")}"></label>
+      <label>ชื่อสามัญ<input class="input mai-generic" value="${esc(m.generic_name||"")}"></label>
+      <label>ความแรง<input class="input mai-strength" value="${esc(m.strength||"")}"></label>
+      <label>รูปแบบยา<input class="input mai-form" value="${esc(m.dosage_form||"")}"></label>
+      <label class="full">ขนาดและวิธีใช้<input class="input mai-dose" value="${esc(m.directions_text||m.dose_amount||"")}"></label>
+      <label>จำนวนครั้ง/วัน<input class="input mai-frequency" type="number" min="0" max="12" value="${esc(m.frequency_per_day??"")}"></label>
+      <label>อาหาร<input class="input mai-meal" value="${esc(medMealLabel(m.meal_relation))}"></label>
+      <label class="full">เวลาเตือน<input class="input mai-times" value="${esc(times.join(", "))}"><small>เวลานี้เป็นค่าแนะนำ ตรวจและแก้ให้ตรงกับชีวิตจริง</small></label>
+      <label>วันเริ่ม<input class="input mai-start" type="date" value="${esc(start)}"></label>
+      <label>วันสิ้นสุด<input class="input mai-end" type="date" value="${esc(end)}"></label>
+      <label class="full">หมายเหตุ<input class="input mai-note" value="${esc([m.dosage_form,m.visible_warnings].filter(Boolean).join(" • "))}"></label>
+    </div>
+  </div>`}).join(""):`<div class="notice warn">AI ไม่พบรายการยาที่อ่านได้ชัด กรุณาถ่ายใหม่ให้เห็นชื่อยาและวิธีใช้เต็มฉลาก</div>`;$("#medAiSaveStatus").textContent=`พบ ${rows.length} รายการ • ต้องตรวจแก้ก่อนบันทึก`}
+async function medicationThumbnail(dataUrl){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const scale=Math.min(1,420/Math.max(img.naturalWidth,img.naturalHeight)),c=document.createElement("canvas");c.width=Math.max(1,Math.round(img.naturalWidth*scale));c.height=Math.max(1,Math.round(img.naturalHeight*scale));const x=c.getContext("2d",{alpha:false});x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);res(c.toDataURL("image/jpeg",.62))};img.onerror=()=>rej(new Error("สร้างภาพย่อไม่สำเร็จ"));img.src=dataUrl})}
+if($("#saveMedAiBtn"))$("#saveMedAiBtn").onclick=async()=>{if(!medAiResult)return;const cards=$$("#medAiReviewList .med-review-card"),selected=cards.filter(c=>$(".mai-use",c).checked);if(!selected.length){$("#medAiSaveStatus").textContent="กรุณาเลือกรายการยาอย่างน้อย 1 รายการ";return}for(const c of selected)if(!$(".mai-name",c).value.trim()){c.scrollIntoView({behavior:"smooth",block:"center"});$("#medAiSaveStatus").textContent="ชื่อยาห้ามว่าง";return}
+  $("#saveMedAiBtn").disabled=true;$("#medAiSaveStatus").textContent="กำลังบันทึกรายการและภาพอ้างอิง...";try{let imageId=null;if(medAiPhotos[0]){imageId=uid();db.medicationImages=Array.isArray(db.medicationImages)?db.medicationImages:[];db.medicationImages.push({id:imageId,name:medAiPhotos[0].name,thumbnail:await medicationThumbnail(medAiPhotos[0].dataUrl),created_at:new Date().toISOString()})}
+    let created=0,updated=0;const replacedImageIds=new Set();for(const c of selected){const i=Number(c.dataset.i),orig=medAiResult.medications[i]||{},name=$(".mai-name",c).value.trim(),genericName=$(".mai-generic",c).value.trim(),strength=$(".mai-strength",c).value.trim(),times=cleanMedTimes($(".mai-times",c).value),now=new Date().toISOString(),match=db.medications.find(m=>{const a=medNameKey(m.name),b=medNameKey(name);return Boolean(a&&b&&a===b)&&(!strength||!m.strength||String(m.strength).toLowerCase()===strength.toLowerCase())}),next={name,genericName,strength,dosageForm:$(".mai-form",c).value.trim(),dose:$(".mai-dose",c).value.trim(),frequencyPerDay:Number($(".mai-frequency",c).value)||null,mealRelation:$(".mai-meal",c).value.trim(),times,time:times[0]||"",startDate:$(".mai-start",c).value,endDate:$(".mai-end",c).value,note:$(".mai-note",c).value.trim(),active:true,aiConfidence:Number(orig.confidence)||0,source:"Medication Vision AI v9.8.1",imageId:imageId||match?.imageId||null,updated_at:now};
+      if(match){if(match.imageId&&imageId&&match.imageId!==imageId)replacedImageIds.add(match.imageId);Object.assign(match,next);updated++}else{db.medications.push({id:uid(),...next,created_at:now});created++}}
+    if(imageId&&!db.medications.some(m=>m.imageId===imageId))replacedImageIds.add(imageId);if(replacedImageIds.size)db.medicationImages=db.medicationImages.filter(x=>!replacedImageIds.has(x.id)||db.medications.some(m=>m.imageId===x.id));save();$("#medAiSaveStatus").textContent=`สร้างใหม่ ${created} • อัปเดต ${updated} • เวลาเตือนพร้อมใช้งาน`;medAiPhotos=[];medAiResult=null;renderMedAiPhotos();setTimeout(()=>{resetMedAi();renderMeds()},900)
+  }catch(e){$("#medAiSaveStatus").textContent="บันทึกไม่สำเร็จ: "+e.message}finally{$("#saveMedAiBtn").disabled=false}};
 
 async function renderFiles(){
   const box=$("#fileList");
@@ -1402,46 +1484,68 @@ function renderWeightPlan(){
 }
 if($("#planForm"))$("#planForm").onsubmit=e=>{e.preventDefault();db.weightGoal={...db.weightGoal,targetWeight:Number($("#planTargetInput").value),weekly:Number($("#planWeeklyInput").value),calories:numOrText($("#planCaloriesInput").value),protein:numOrText($("#planProteinInput").value),steps:numOrText($("#planStepsInput").value),updated_at:new Date().toISOString()};save()};
 
-/* ================= v9.7 Auth Recovery, Sync, Backup ================= */
+/* ================= v9.8 Resilient Auth + Multi-device Sync ================= */
 function authToken(){return getAuth()?.access_token||getCfg().key}
+function storeAuth(a){if(!a)return null;const old=getAuth()||{},next={...old,...a,user:a.user||old.user},tokenChanged=Boolean(a.access_token&&a.access_token!==old.access_token);if(next.access_token&&(!next.expires_at||tokenChanged))next.expires_at=Number(a.expires_at||Math.floor(Date.now()/1000)+Number(a.expires_in||3600));localStorage.setItem(AUTH_KEY,JSON.stringify(next));return next}
 async function authRequest(path,body){const c=getCfg();if(!c.url||!c.key)throw new Error("แอปยังไม่ได้ตั้งค่า Supabase ใน config.js");const r=await fetch(`${c.url}/auth/v1/${path}`,{method:"POST",headers:{apikey:c.key,"Content-Type":"application/json"},body:JSON.stringify(body)});let j={};try{j=await r.json()}catch{}if(!r.ok)throw new Error(j.msg||j.error_description||j.message||`HTTP ${r.status}`);return j}
-function renderAccountState(message=""){const a=getAuth(),signedIn=Boolean(a?.access_token);if($("#signOutBtn"))$("#signOutBtn").classList.toggle("hidden",!signedIn);if(message&&$("#accountStatus"))$("#accountStatus").textContent=message}
-async function activateAccount(a){
+async function refreshSession(force=false){const a=getAuth();if(!a?.refresh_token)return a;const expires=Number(a.expires_at||0)*1000;if(!force&&expires-Date.now()>120000)return a;const fresh=await authRequest("token?grant_type=refresh_token",{refresh_token:a.refresh_token});return storeAuth(fresh)}
+function renderAccountState(message=""){const a=getAuth(),signedIn=Boolean(a?.access_token&&a?.user?.id);if($("#signOutBtn"))$("#signOutBtn").classList.toggle("hidden",!signedIn);for(const id of ["syncPushBtn","syncPullBtn"])if($("#"+id))$("#"+id).disabled=!signedIn;if(message&&$("#accountStatus"))$("#accountStatus").textContent=message;else if($("#accountStatus"))$("#accountStatus").textContent=signedIn?`เข้าสู่ระบบแล้ว: ${a.user.email||a.user.id}`:"ยังไม่ได้เข้าสู่ระบบ"}
+function itemStamp(x){return Date.parse(x?.updated_at||x?.created_at||x?.date||0)||0}
+function mergeRows(local=[],remote=[]){const out=new Map();for(const x of [...remote,...local]){if(!x?.id)continue;const old=out.get(x.id);if(!old||itemStamp(x)>=itemStamp(old))out.set(x.id,x)}return [...out.values()]}
+function mergeSnapshots(local,remote){const a=normalizeDb(local),b=normalizeDb(remote),goal=itemStamp(a.weightGoal)>=itemStamp(b.weightGoal)?a.weightGoal:b.weightGoal;return normalizeDb({...b,...a,records:mergeRows(a.records,b.records),medications:mergeRows(a.medications,b.medications),medicationImages:mergeRows(a.medicationImages,b.medicationImages),documents:mergeRows(a.documents,b.documents),bodyLogs:mergeRows(a.bodyLogs,b.bodyLogs),bpSessions:mergeRows(a.bpSessions,b.bpSessions),weightGoal:goal,syncMeta:{localUpdatedAt:new Date().toISOString(),lastCloudUpdatedAt:a.syncMeta?.lastCloudUpdatedAt||null}})}
+let accountSyncInFlight=null,accountSyncOwner=null;
+async function activateAccount(a,{background=false}={}){
   if(!a?.user?.id)return;
-  const key=accountDataKey(),local=localStorage.getItem(key);
-  if(local){db=load();renderAll();return}
+  if(accountSyncInFlight&&accountSyncOwner===a.user.id)return accountSyncInFlight;
+  const syncJob=(async()=>{
+  const accountId=a.user.id,key=`${KEY}:user:${accountId}`,localRaw=localStorage.getItem(key);let local=null;try{local=localRaw?normalizeDb(JSON.parse(localRaw)):null}catch{local=null}
   try{
     const rows=await snapshotRequest("GET");
-    if(rows.length&&Array.isArray(rows[0]?.payload?.records)){db={...blank,...rows[0].payload};localStorage.setItem(key,JSON.stringify(db));renderAll();return}
+    if(getAuth()?.user?.id!==accountId)return;
+    if(rows.length&&Array.isArray(rows[0]?.payload?.records)){
+      const row=rows[0],remote=normalizeDb(row.payload),remoteAt=Date.parse(row.updated_at||0)||0,knownAt=Date.parse(local?.syncMeta?.lastCloudUpdatedAt||0)||0,localAt=Date.parse(local?.syncMeta?.localUpdatedAt||0)||0;
+      const localDirty=Boolean(local)&&(localAt>knownAt||!knownAt),remoteChanged=remoteAt>knownAt;
+      if(!local||(!localDirty&&remoteChanged)){db=remote;db.syncMeta={...(db.syncMeta||{}),localUpdatedAt:row.updated_at,lastCloudUpdatedAt:row.updated_at};persistDb({markChanged:false,cloud:false,storageKey:key});if(!background)renderAccountState(`โหลดข้อมูลล่าสุดจาก Cloud แล้ว • ${db.records.length} รายการ`);return}
+      if(localDirty&&remoteChanged){db=mergeSnapshots(local,remote);persistDb({markChanged:false,cloud:false,storageKey:key});await pushSnapshot();if(!background)renderAccountState(`รวมข้อมูลจากทุกอุปกรณ์แล้ว • ${db.records.length} รายการ`);return}
+      db=local;persistDb({markChanged:false,cloud:false,storageKey:key});if(localDirty)await pushSnapshot();return;
+    }
   }catch(e){console.warn("Cloud load skipped",e)}
+  if(getAuth()?.user?.id!==accountId)return;
+  if(local){db=local;persistDb({markChanged:false,cloud:false,storageKey:key});return}
   const claimed=localStorage.getItem("ph_v976_legacy_claimed");
   const legacy=localStorage.getItem(KEY);
   if(legacy&&!claimed){
-    try{db={...blank,...JSON.parse(legacy)};localStorage.setItem("ph_v976_legacy_claimed",a.user.id)}
+    try{db=normalizeDb(JSON.parse(legacy));localStorage.setItem("ph_v976_legacy_claimed",a.user.id)}
     catch{db=structuredClone(blank)}
   }else db=structuredClone(blank);
-  localStorage.setItem(key,JSON.stringify(db));renderAll();scheduleCloudSync();
+  persistDb({markChanged:true,cloud:true,storageKey:key});
+  })();
+  accountSyncInFlight=syncJob;accountSyncOwner=a.user.id;
+  try{return await syncJob}finally{if(accountSyncInFlight===syncJob){accountSyncInFlight=null;accountSyncOwner=null}}
 }
-async function accountAction(kind){const email=$("#accountEmail").value.trim(),password=$("#accountPassword").value,status=$("#accountStatus");if(!email||!password){status.textContent="กรุณากรอก Email และ Password";return}status.textContent="กำลังดำเนินการ…";try{const a=await authRequest(kind==="signup"?"signup":"token?grant_type=password",{email,password});if(a.access_token){localStorage.setItem(AUTH_KEY,JSON.stringify(a));await activateAccount(a)}renderAccountState(a.access_token?`เข้าสู่ระบบแล้ว: ${a.user?.email||email} • ข้อมูลส่วนตัวพร้อมใช้งาน`:"สมัครสำเร็จ • กรุณาเปิดอีเมลยืนยัน แล้วกลับมาเข้าสู่ระบบ");syncBadge()}catch(e){renderAccountState("ไม่สำเร็จ: "+e.message)}}
-if($("#signInBtn"))$("#signInBtn").onclick=()=>accountAction("signin");if($("#signUpBtn"))$("#signUpBtn").onclick=()=>accountAction("signup");if($("#signOutBtn"))$("#signOutBtn").onclick=()=>{localStorage.removeItem(AUTH_KEY);db=structuredClone(blank);localStorage.setItem(accountDataKey(),JSON.stringify(db));renderAll();renderAccountState("ออกจากระบบแล้ว • ข้อมูลของบัญชีถูกซ่อนจากอุปกรณ์นี้");syncBadge()};renderAccountState();
+async function accountAction(kind){const email=$("#accountEmail").value.trim(),password=$("#accountPassword").value,status=$("#accountStatus");if(!email||!password){status.textContent="กรุณากรอก Email และ Password";return}status.textContent="กำลังดำเนินการ…";try{const a=await authRequest(kind==="signup"?"signup":"token?grant_type=password",{email,password});if(a.access_token){const session=storeAuth(a);await activateAccount(session)}renderAccountState(a.access_token?`เข้าสู่ระบบแล้ว: ${a.user?.email||email} • ซิงก์ข้อมูลทุกอุปกรณ์แล้ว`:"สมัครสำเร็จ • กรุณาเปิดอีเมลยืนยัน แล้วกลับมาเข้าสู่ระบบ");syncBadge()}catch(e){renderAccountState("ไม่สำเร็จ: "+e.message)}}
+if($("#signInBtn"))$("#signInBtn").onclick=()=>accountAction("signin");if($("#signUpBtn"))$("#signUpBtn").onclick=()=>accountAction("signup");if($("#signOutBtn"))$("#signOutBtn").onclick=()=>{clearTimeout(cloudSyncTimer);localStorage.removeItem(AUTH_KEY);db=structuredClone(blank);localStorage.setItem(accountDataKey(),JSON.stringify(db));renderAll();renderAccountState("ออกจากระบบแล้ว • ข้อมูลของบัญชีถูกซ่อนจากอุปกรณ์นี้");syncBadge()};renderAccountState();
 function recoveryRedirect(){return location.origin+location.pathname}
 if($("#forgotPasswordBtn"))$("#forgotPasswordBtn").onclick=async()=>{const email=$("#accountEmail").value.trim(),s=$("#accountStatus");if(!email){s.textContent="กรอกอีเมลก่อน แล้วกดลืมรหัสผ่าน";return}s.textContent="กำลังส่งลิงก์…";try{await authRequest("recover",{email,redirect_to:recoveryRedirect()});s.textContent="ส่งลิงก์แล้ว • เปิดอีเมลฉบับล่าสุดเพื่อตั้งรหัสใหม่"}catch(e){s.textContent=e.message.includes("rate limit")?"ส่งอีเมลเกินโควตา Supabase • ใช้ Add user + Auto Confirm หรือรอให้โควตารีเซ็ต":"ส่งลิงก์ไม่สำเร็จ: "+e.message}};
-function readRecoverySession(){const p=new URLSearchParams(location.hash.slice(1));if(p.get("type")!=="recovery"||!p.get("access_token"))return;localStorage.setItem(AUTH_KEY,JSON.stringify({access_token:p.get("access_token"),refresh_token:p.get("refresh_token"),token_type:p.get("token_type")||"bearer",expires_in:Number(p.get("expires_in")||3600),user:null,recovery:true}));$("#recoveryPanel")?.classList.remove("hidden");$("#accountStatus").textContent="ยืนยันลิงก์แล้ว • กรุณาตั้งรหัสผ่านใหม่";go("settings")}
+function readRecoverySession(){const p=new URLSearchParams(location.hash.slice(1));if(p.get("type")!=="recovery"||!p.get("access_token"))return;storeAuth({access_token:p.get("access_token"),refresh_token:p.get("refresh_token"),token_type:p.get("token_type")||"bearer",expires_in:Number(p.get("expires_in")||3600),user:null,recovery:true});$("#recoveryPanel")?.classList.remove("hidden");$("#accountStatus").textContent="ยืนยันลิงก์แล้ว • กรุณาตั้งรหัสผ่านใหม่";go("settings")}
 if($("#updatePasswordBtn"))$("#updatePasswordBtn").onclick=async()=>{const password=$("#newAccountPassword").value,s=$("#accountStatus"),c=getCfg(),a=getAuth();if(password.length<8){s.textContent="รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัว";return}try{const r=await fetch(`${c.url}/auth/v1/user`,{method:"PUT",headers:{apikey:c.key,Authorization:`Bearer ${a?.access_token}`,"Content-Type":"application/json"},body:JSON.stringify({password})}),j=await r.json();if(!r.ok)throw new Error(j.msg||j.message||`HTTP ${r.status}`);localStorage.removeItem(AUTH_KEY);history.replaceState(null,"",location.pathname+location.search);$("#recoveryPanel").classList.add("hidden");$("#accountPassword").value="";$("#newAccountPassword").value="";s.textContent="เปลี่ยนรหัสผ่านสำเร็จ • กรอกรหัสใหม่แล้วเข้าสู่ระบบ"}catch(e){s.textContent="เปลี่ยนรหัสไม่สำเร็จ: "+e.message}};
 readRecoverySession();
-async function snapshotRequest(method,body){const c=getCfg(),a=getAuth();if(!c.url||!c.key||!a?.access_token)throw new Error("ต้องตั้งค่า Supabase และเข้าสู่ระบบก่อน");const r=await fetch(`${c.url}/rest/v1/app_snapshots?user_id=eq.${encodeURIComponent(a.user.id)}`,{method,headers:{apikey:c.key,Authorization:`Bearer ${a.access_token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=representation"},body:body?JSON.stringify(body):undefined});if(!r.ok)throw new Error(`${r.status} ${await r.text()}`);return r.status===204?[]:r.json()}
+async function snapshotRequest(method,body,retried=false){const c=getCfg();let a=await refreshSession(false);if(!c.url||!c.key||!a?.access_token||!a?.user?.id)throw new Error("ต้องเข้าสู่ระบบก่อน");const r=await fetch(`${c.url}/rest/v1/app_snapshots?user_id=eq.${encodeURIComponent(a.user.id)}&select=payload,app_version,updated_at`,{method,headers:{apikey:c.key,Authorization:`Bearer ${a.access_token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=representation"},body:body?JSON.stringify(body):undefined});if(r.status===401&&!retried&&a.refresh_token){a=await refreshSession(true);return snapshotRequest(method,body,true)}if(!r.ok)throw new Error(`${r.status} ${await r.text()}`);return r.status===204?[]:r.json()}
 let cloudSyncTimer=0;
+async function pushSnapshot(){const a=await refreshSession(false);if(!a?.user?.id)throw new Error("ต้องเข้าสู่ระบบก่อน");const accountId=a.user.id,storageKey=`${KEY}:user:${accountId}`;if(!db.syncMeta?.localUpdatedAt)db.syncMeta={...(db.syncMeta||{}),localUpdatedAt:new Date().toISOString()};const rows=await snapshotRequest("POST",{user_id:accountId,payload:db,app_version:"9.8.1",updated_at:new Date().toISOString()});if(getAuth()?.user?.id!==accountId)return rows;const cloudAt=rows?.[0]?.updated_at||new Date().toISOString();db.syncMeta={...(db.syncMeta||{}),lastCloudUpdatedAt:cloudAt};persistDb({markChanged:false,cloud:false,storageKey});return rows}
 function scheduleCloudSync(){
   const a=getAuth();if(!a?.access_token||!a?.user?.id)return;
   clearTimeout(cloudSyncTimer);cloudSyncTimer=setTimeout(async()=>{
-    try{await snapshotRequest("POST",{user_id:a.user.id,payload:db,app_version:"9.7.7",updated_at:new Date().toISOString()});if($("#syncStatus"))$("#syncStatus").textContent=`บันทึก Cloud อัตโนมัติแล้ว • ${new Date().toLocaleTimeString("th-TH")}`}
-    catch(e){if($("#syncStatus"))$("#syncStatus").textContent="บันทึกในเครื่องแล้ว • Cloud จะลองใหม่เมื่อมีการแก้ไขครั้งถัดไป"}
+    try{await pushSnapshot();if($("#syncStatus"))$("#syncStatus").textContent=`ซิงก์อัตโนมัติแล้ว • ${new Date().toLocaleTimeString("th-TH")}`}
+    catch(e){if($("#syncStatus"))$("#syncStatus").textContent="บันทึกในเครื่องแล้ว • จะซิงก์ใหม่เมื่อออนไลน์"}
   },900);
 }
-if($("#syncPushBtn"))$("#syncPushBtn").onclick=async()=>{const s=$("#syncStatus"),a=getAuth();s.textContent="กำลังส่งข้อมูล…";try{await snapshotRequest("POST",{user_id:a.user.id,payload:db,app_version:"9.7",updated_at:new Date().toISOString()});s.textContent=`ซิงก์ขึ้น Cloud แล้ว • ${db.records.length} records • ${new Date().toLocaleString("th-TH")}`}catch(e){s.textContent="ซิงก์ไม่สำเร็จ: "+e.message}};
-if($("#syncPullBtn"))$("#syncPullBtn").onclick=async()=>{const s=$("#syncStatus");s.textContent="กำลังดึงข้อมูล…";try{const rows=await snapshotRequest("GET");if(!rows.length)throw new Error("ยังไม่มีข้อมูลสำรองบน Cloud");const remote=rows[0].payload;if(!remote||!Array.isArray(remote.records))throw new Error("รูปแบบข้อมูล Cloud ไม่ถูกต้อง");if(confirm(`แทนข้อมูลในเครื่องด้วย Cloud ${remote.records.length} records?`)){db={...blank,...remote};save();s.textContent="ดึงข้อมูลจาก Cloud สำเร็จ"}}catch(e){s.textContent="ดึงไม่สำเร็จ: "+e.message}};
+if($("#syncPushBtn"))$("#syncPushBtn").onclick=async()=>{const s=$("#syncStatus");s.textContent="กำลังซิงก์…";try{await pushSnapshot();s.textContent=`ซิงก์ขึ้น Cloud แล้ว • ${db.records.length} รายการ • ${new Date().toLocaleString("th-TH")}`}catch(e){s.textContent="ซิงก์ไม่สำเร็จ: "+e.message}};
+if($("#syncPullBtn"))$("#syncPullBtn").onclick=async()=>{const s=$("#syncStatus"),a=getAuth();s.textContent="กำลังตรวจข้อมูลทุกอุปกรณ์…";try{await activateAccount(a);s.textContent=`ข้อมูลทุกอุปกรณ์เป็นปัจจุบันแล้ว • ${db.records.length} รายการ`}catch(e){s.textContent="ดึงไม่สำเร็จ: "+e.message}};
 if($("#restoreJsonInput"))$("#restoreJsonInput").onchange=async e=>{const s=$("#restoreStatus");try{const j=JSON.parse(await e.target.files[0].text());if(!Array.isArray(j.records))throw new Error("ไม่พบ records ในไฟล์");if(confirm(`Restore ${j.records.length} records และแทนข้อมูลในเครื่อง?`)){db={...blank,...j};save();s.textContent="Restore สำเร็จ"}}catch(err){s.textContent="Restore ไม่สำเร็จ: "+err.message}e.target.value=""};
-const _v96RenderAll=renderAll;renderAll=function(){_v96RenderAll();renderBpSessions();renderWeightPlan();const a=getAuth();if($("#accountStatus")&&a?.user)$("#accountStatus").textContent=`เข้าสู่ระบบแล้ว: ${a.user.email||a.user.id}`};
+const _v96RenderAll=renderAll;renderAll=function(){_v96RenderAll();renderBpSessions();renderWeightPlan();renderAccountState()};
 $("#bpSessionDate").value=new Date().toISOString().slice(0,10);renderBpSessions();renderWeightPlan();
-if(getAuth()?.user?.id)activateAccount(getAuth());
-console.info("Personal Healthcare v9.7.7 private per-account workspace loaded");
+async function syncOnResume(){if(document.visibilityState==="hidden"||!getAuth()?.user?.id)return;try{const a=await refreshSession(false);await activateAccount(a,{background:true});if($("#syncStatus"))$("#syncStatus").textContent=`ตรวจข้อมูลล่าสุดแล้ว • ${new Date().toLocaleTimeString("th-TH")}`}catch(e){console.warn("Resume sync skipped",e)}}
+window.addEventListener("online",syncOnResume);document.addEventListener("visibilitychange",syncOnResume);
+if(getAuth()?.user?.id)syncOnResume();
+console.info("Personal Healthcare v9.8.1 Medication Vision AI loaded");

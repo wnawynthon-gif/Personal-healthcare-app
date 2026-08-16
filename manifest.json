@@ -1,11 +1,11 @@
 {
-  "name": "Personal Healthcare v9.7.7",
-  "short_name": "Health v9.7.7",
+  "name": "Personal Healthcare v9.8.1",
+  "short_name": "Health v9.8.1",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f7f7",
   "theme_color": "#0f766e",
-  "description": "Personal Healthcare v9.7.7 with isolated per-account device storage and automatic private cloud sync.",
+  "description": "Personal Healthcare v9.8.1 with medication label photo AI, editable multi-time reminders, and multi-device sync.",
   "icons": []
 }

@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b57" />
-  <title>Personal Healthcare v9.7.7</title>
-  <link rel="manifest" href="manifest.webmanifest?v=9.7.7" />
-  <link rel="stylesheet" href="styles.css?v=9.7.7" />
+  <title>Personal Healthcare v9.8.1</title>
+  <link rel="manifest" href="manifest.webmanifest?v=9.8.1" />
+  <link rel="stylesheet" href="styles.css?v=9.8.1" />
   <style id="mobile-v974">
   @media(max-width:700px){
     html,body{width:100%!important;max-width:100%!important;margin:0!important;overflow-x:hidden!important;-webkit-text-size-adjust:100%}
@@ -35,7 +35,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">PH</div>
-      <div><strong>Personal Healthcare</strong><small>v9.7.7 • Private Accounts</small></div>
+      <div><strong>Personal Healthcare</strong><small>v9.8.1 • Medication Photo AI</small></div>
     </div>
     <nav>
       <button class="nav active" data-view="dashboard">ภาพรวม</button>
@@ -70,7 +70,7 @@
 
     <section class="view active" id="view-dashboard">
       <div class="notice info">
-        <strong>v9.7:</strong> Accuracy Engine + บันทึกความดันที่บ้าน + แผน 65 kg + กู้รหัสผ่าน + Cloud Backup
+        <strong>v9.8.1:</strong> ถ่ายฉลากยา → AI อ่านข้อมูล → ตรวจแก้ → สร้างเวลาเตือนอัตโนมัติ
       </div>
 
       <div class="kpis">
@@ -351,14 +351,50 @@
     </section>
 
     <section class="view" id="view-meds">
-      <div class="grid two">
+      <div class="med-ai-hero panel">
+        <div>
+          <span class="ai-chip">v9.8.1 • Medication Vision AI</span>
+          <h2>ถ่ายฉลากยา → ตรวจแก้ → สร้างเวลาเตือน</h2>
+          <p>ถ่ายด้านหน้ากล่องยาและฉลากวิธีใช้ ระบบจะอ่านชื่อยา ขนาดยา จำนวนครั้ง เวลา และระยะเวลา แล้วให้ตรวจยืนยันก่อนบันทึก</p>
+        </div>
+        <div class="med-ai-steps" aria-label="ขั้นตอน"><span>1 ถ่ายภาพ</span><span>2 AI อ่าน</span><span>3 ตรวจแก้</span><span>4 สร้างเตือน</span></div>
+        <div class="notice warn"><strong>ต้องตรวจฉลากทุกครั้ง:</strong> AI อาจอ่านชื่อยา ขนาด หรือคำสั่งใช้ผิด ห้ามใช้ข้อมูลนี้เพื่อเริ่ม หยุด หรือเปลี่ยนยาเอง หากไม่แน่ใจให้สอบถามแพทย์หรือเภสัชกร</div>
+      </div>
+
+      <div class="grid two med-ai-grid">
+        <article class="panel">
+          <div class="panel-head"><div><h3>1. ถ่ายภาพ / เลือกรูปยา</h3><small>ถ่ายตรง ชัด ครบทั้งชื่อยาและวิธีใช้ • เพิ่มได้หลายรูป</small></div></div>
+          <div class="med-camera-actions">
+            <label class="btn primary file-btn">ถ่ายฉลากยา<input id="medCameraInput" type="file" accept="image/*" capture="environment"></label>
+            <label class="btn ghost file-btn">เลือกรูปจาก Photos<input id="medGalleryInput" type="file" accept="image/*,.heic,.heif" multiple></label>
+          </div>
+          <div id="medPhotoGrid" class="ai-photo-grid"></div>
+          <div class="row med-ai-actions"><button class="btn ghost" id="clearMedPhotosBtn" type="button">ล้างรูป</button><button class="btn success" id="analyzeMedAiBtn" type="button" disabled>ให้ AI อ่านฉลากยา</button></div>
+          <div id="medAiProgressWrap" class="ai-progress-wrap" hidden><div class="ocr-progress"><span id="medAiProgressBar"></span></div><small id="medAiProgressText" class="muted">พร้อมวิเคราะห์</small></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><div><h3>2. ตรวจแก้ก่อนสร้างเตือน</h3><small>ช่องเวลาที่ AI แนะนำเป็นค่าเริ่มต้น ผู้ใช้ต้องยืนยันให้ตรงกับฉลากและคำสั่งแพทย์</small></div></div>
+          <div id="medAiEmpty" class="ai-empty"><div class="ai-empty-icon">Rx</div><strong>ยังไม่มีผลวิเคราะห์</strong><small>เพิ่มภาพฉลากยา แล้วกด “ให้ AI อ่านฉลากยา”</small></div>
+          <div id="medAiReview" hidden>
+            <div class="ai-summary-card"><h3 id="medAiSummaryTitle">ฉลากยา</h3><p id="medAiSummaryText"></p></div>
+            <div id="medAiAlerts" class="ai-alerts stack"></div>
+            <div id="medAiReviewList" class="med-ai-review-list"></div>
+            <div class="notice info med-confirm-note">ระบบจะบันทึกเฉพาะรายการที่เลือกและผ่านการตรวจแก้แล้ว รูปขนาดย่อจะถูกเก็บกับรายการเพื่อใช้อ้างอิง</div>
+            <div class="footer-actions"><span id="medAiSaveStatus" class="muted"></span><button class="btn success" id="saveMedAiBtn" type="button">ยืนยันและสร้างรายการเตือน</button></div>
+          </div>
+        </article>
+      </div>
+
+      <div class="grid two med-lists-grid">
         <div class="panel">
-          <div class="panel-head split"><div><h3>รายการยา</h3><small>ข้อมูลเพื่อช่วยจำเท่านั้น</small></div><button class="btn primary" id="addMedBtn">+ เพิ่มยา</button></div>
+          <div class="panel-head split"><div><h3>รายการยา</h3><small>ข้อมูลเพื่อช่วยจำเท่านั้น • แก้ไขได้ทุกครั้ง</small></div><button class="btn primary" id="addMedBtn">+ เพิ่มยาเอง</button></div>
           <div id="medList" class="stack"></div>
         </div>
         <div class="panel">
-          <h3>เตือนประจำวัน</h3>
-          <p class="muted">เวอร์ชันเว็บนี้เก็บเวลาเตือนในแอป หากต้องการการแจ้งเตือนระดับระบบให้ใช้ Calendar/Reminder ของอุปกรณ์ร่วมด้วย</p>
+          <div class="panel-head split"><div><h3>เตือนประจำวัน</h3><small>เรียงตามเวลาของวันนี้</small></div><button class="btn ghost" id="enableMedNotificationsBtn" type="button">เปิดแจ้งเตือน</button></div>
+          <p class="muted">แอปจะแจ้งเตือนเมื่อเปิดแอปหรือ PWA อยู่ การแจ้งเตือนขณะปิดแอปไม่รับประกัน จึงควรเพิ่มลง Calendar/Reminder ของอุปกรณ์สำหรับยาสำคัญด้วย</p>
+          <p id="medNotificationStatus" class="muted"></p>
           <div id="reminderList" class="stack"></div>
         </div>
       </div>
@@ -472,11 +508,11 @@
     <section class="view" id="view-settings">
       <div class="grid two">
         <div class="panel account-panel">
-          <h3>บัญชีส่วนตัว</h3><p class="muted">สมัครบัญชีหรือเข้าสู่ระบบเพื่อเก็บข้อมูลสุขภาพแยกเฉพาะแต่ละคนอย่างปลอดภัย</p>
+          <h3>บัญชีส่วนตัว</h3><p class="muted">เข้าสู่ระบบด้วยบัญชีเดียวกันบนมือถือ แท็บเล็ต หรือคอมพิวเตอร์ ระบบจะตรวจและซิงก์ข้อมูลล่าสุดให้อัตโนมัติ</p>
           <label>Email<input class="input" id="accountEmail" type="email" autocomplete="email" placeholder="name@example.com"></label><label>Password<input class="input" id="accountPassword" type="password" autocomplete="current-password" minlength="6" placeholder="อย่างน้อย 6 ตัวอักษร"></label>
           <div class="row"><button class="btn primary" id="signInBtn" type="button">เข้าสู่ระบบ</button><button class="btn ghost" id="signUpBtn" type="button">สมัครบัญชี</button><button class="btn ghost" id="forgotPasswordBtn" type="button">ลืมรหัสผ่าน</button><button class="btn ghost" id="signOutBtn" type="button">ออกจากระบบ</button></div><p id="accountStatus" class="muted">ยังไม่ได้เข้าสู่ระบบ</p>
           <div id="recoveryPanel" class="notice hidden"><strong>ตั้งรหัสผ่านใหม่</strong><p class="muted">เปิดหน้านี้จากลิงก์ Recovery แล้วกรอกรหัสใหม่อย่างน้อย 8 ตัว</p><label>รหัสผ่านใหม่<input class="input" id="newAccountPassword" type="password" autocomplete="new-password" minlength="8"></label><button class="btn primary" id="updatePasswordBtn" type="button">บันทึกรหัสผ่านใหม่</button></div>
-          <div class="row"><button class="btn primary" id="syncPushBtn" type="button">ส่งข้อมูลขึ้น Cloud</button><button class="btn ghost" id="syncPullBtn" type="button">ดึงข้อมูลจาก Cloud</button></div><p id="syncStatus" class="muted"></p>
+          <div class="row"><button class="btn primary" id="syncPushBtn" type="button">ซิงก์ตอนนี้</button><button class="btn ghost" id="syncPullBtn" type="button">ตรวจข้อมูลจากอุปกรณ์อื่น</button></div><p id="syncStatus" class="muted">ระบบจะซิงก์หลังบันทึกข้อมูลและเมื่อกลับมาเปิดแอป</p>
         </div>
         <div class="panel admin-config" aria-hidden="true">
           <h3>Supabase (Optional)</h3>
@@ -488,8 +524,8 @@
         </div>
         
         <div class="panel admin-config" aria-hidden="true">
-          <h3>AI Health Analysis</h3>
-          <p class="muted">v8.2 ใช้ Supabase Edge Function เป็นตัวกลาง เพื่อไม่เปิดเผย OpenAI API key ใน GitHub Pages</p>
+          <h3>AI Health & Medication Analysis</h3>
+          <p class="muted">ใช้ Supabase Edge Function เป็นตัวกลางสำหรับผลตรวจและฉลากยา โดยไม่เปิดเผย OpenAI API key ใน GitHub Pages</p>
           <label>Edge Function URL
             <input class="input" id="aiFunctionUrl" placeholder="https://YOUR_PROJECT.supabase.co/functions/v1/analyze-health-report">
           </label>
@@ -546,12 +582,17 @@
 
 <dialog id="medDialog">
   <form method="dialog" id="medForm">
-    <div class="dialog-head"><h3>เพิ่มยา</h3><button value="cancel" class="icon-btn">×</button></div>
+    <div class="dialog-head"><h3 id="medDialogTitle">เพิ่มยา</h3><button value="cancel" class="icon-btn">×</button></div>
+    <input id="medEditId" type="hidden">
     <div class="form-grid">
-      <label>ชื่อยา<input class="input" id="medName" required /></label>
-      <label>ขนาด/วิธีใช้<input class="input" id="medDose" placeholder="เช่น 1 เม็ด หลังอาหาร" /></label>
-      <label>เวลา<input class="input" id="medTime" type="time" /></label>
-      <label>หมายเหตุ<input class="input" id="medNote" /></label>
+      <label>ชื่อยา/ชื่อการค้า<input class="input" id="medName" required /></label>
+      <label>ชื่อสามัญ<input class="input" id="medGeneric" placeholder="เช่น ciprofloxacin" /></label>
+      <label>ความแรง<input class="input" id="medStrength" placeholder="เช่น 500 mg" /></label>
+      <label>ขนาดและวิธีใช้<input class="input" id="medDose" placeholder="เช่น ครั้งละ 1 เม็ด หลังอาหาร" /></label>
+      <label class="full">เวลาเตือน<input class="input" id="medTimes" placeholder="08:00, 18:00" /><small>หลายเวลาให้คั่นด้วย comma เช่น 08:00, 18:00</small></label>
+      <label>วันเริ่ม<input class="input" id="medStartDate" type="date" /></label>
+      <label>วันสิ้นสุด<input class="input" id="medEndDate" type="date" /></label>
+      <label class="full">หมายเหตุ<input class="input" id="medNote" /></label>
     </div>
     <div class="footer-actions"><button value="cancel" class="btn ghost">ยกเลิก</button><button type="submit" value="default" class="btn primary">บันทึก</button></div>
   </form>
@@ -613,10 +654,10 @@
   </form>
 </dialog>
 
-<script src="config.js?v=9.7.7"></script>
-<script src="app.js?v=9.7.7"></script>
+<script src="config.js?v=9.8.1"></script>
+<script src="app.js?v=9.8.1"></script>
 <script>
-if('serviceWorker' in navigator){window.addEventListener('load',async()=>{try{const r=await navigator.serviceWorker.getRegistrations();await Promise.all(r.map(x=>x.unregister()));if('caches' in window){const k=await caches.keys();await Promise.all(k.map(x=>caches.delete(x)))}await navigator.serviceWorker.register('./sw.js?v=9.7.7')}catch(e){console.warn(e)}})}
+if('serviceWorker' in navigator){window.addEventListener('load',async()=>{try{const r=await navigator.serviceWorker.getRegistrations();await Promise.all(r.map(x=>x.unregister()));if('caches' in window){const k=await caches.keys();await Promise.all(k.map(x=>caches.delete(x)))}await navigator.serviceWorker.register('./sw.js?v=9.8.1')}catch(e){console.warn(e)}})}
 </script>
 </body>
 </html>
